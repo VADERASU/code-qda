@@ -1,0 +1,39 @@
+# Diarization gold — laptop recording, 12:00–15:00
+#
+# Converted from hand annotation. Times are ABSOLUTE recording times, so score
+# a clip cut at 12:00 with:  --gold_offset -720
+#
+# FORMAT
+#   START-END  LABEL              single speaker
+#   START-END  A+B                simultaneous speech: either label accepted
+#   START-END  A ~B ~C            A is primary, B/C interjecting: lenient
+#                                 scoring accepts any; strict scoring wants A
+#   Unmarked spans are treated as silence and not scored.
+#
+# CHECK THESE — the annotation had a few overlaps/gaps I resolved by guess:
+#   * 12:10 marked both as "E" and as the start of "12:10-12:14 EP" — I made
+#     12:10-12:14 all overlap. If E spoke alone first, split it.
+#   * 12:14-12:15 and 12:22-12:22.5 left as gaps. Real, or just rounding?
+#   * "14:42-14:45 E" then "14:44 P says yeah" then "14:44-14:56 E" conflict.
+#     I made 14:44-14:45 overlap and ran E to 14:56. Adjust if wrong.
+#   * The two flagged "yeah"s (14:44, 14:50) are marked as overlap points,
+#     since E is talking through them.
+
+12:00-12:04    E
+12:04-12:06    E+P
+12:06-12:10    P
+12:10-12:14    E+P
+12:15-12:22    E
+12:22.5-13:32  P ~E
+13:32-13:45    E ~P
+13:45-13:47    P
+13:47-13:51    E
+13:51-14:13    P ~X ~E
+14:14-14:18    X ~P
+14:18-14:42    P
+14:42-14:44    E
+14:44-14:45    E+P
+14:45-14:50    E
+14:50-14:51    E+P
+14:51-14:56    E
+14:56-15:00    P

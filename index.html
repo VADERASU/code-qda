@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>code-qda</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+<div id="sidebar">
+  <div id="files-panel" class="sidebar-section">
+    <h3>Files</h3>
+    <div id="file-list"></div>
+  </div>
+  <div id="files-resize-handle" role="separator" aria-label="Resize Files pane" aria-orientation="horizontal" aria-controls="files-panel codes-panel" tabindex="0" title="Drag to resize Files; use arrow keys when focused. Double-click to reset."></div>
+  <div id="codes-panel">
+    <div id="codes-header">
+      <div style="display:flex;align-items:center;gap:6px">
+        <h3 style="margin-bottom:0">Codes</h3>
+        <button id="collapse-codes-btn" type="button" title="Collapse all codes" aria-label="Collapse all codes" aria-controls="code-list">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true">
+            <path d="M5 2h8a1 1 0 0 1 1 1v8"/>
+            <rect x="2" y="5" width="9" height="9" rx="1"/>
+            <path d="M4 9.5h5"/>
+            <path class="expand-mark" d="M6.5 7v5"/>
+          </svg>
+        </button>
+      </div>
+      <div style="display:flex;gap:4px">
+        <button id="add-code-btn" title="Add an empty code">+</button>
+        <button id="prune-btn" title="Remove codes with no annotations in any file">Prune</button>
+      </div>
+    </div>
+    <div id="code-list"></div>
+  </div>
+  <div id="sidebar-footer">
+    <input id="code-search" type="search" placeholder="Search codes…" aria-label="Search existing codes" aria-controls="code-list" autocomplete="off" spellcheck="false">
+    <div id="save-status" role="status"></div>
+  </div>
+</div>
+
+<div id="resize-handle"></div>
+
+<div id="main">
+  <div id="empty-state">Select a file to begin coding</div>
+  <div id="file-bar" hidden>
+    <div id="file-bar-inner">
+      <span id="file-bar-name"></span>
+      <details id="reading-settings">
+        <summary>Reading</summary>
+        <div class="reading-panel">
+          <label for="reading-font">Font</label>
+          <select id="reading-font" name="font">
+            <option value="system">System sans serif</option>
+            <option value="arial">Arial</option>
+            <option value="georgia">Georgia</option>
+          </select>
+          <label for="reading-size">Text size</label>
+          <select id="reading-size" name="size">
+            <option value="16">16 px</option><option value="18">18 px</option>
+            <option value="20" selected>20 px</option><option value="22">22 px</option>
+            <option value="24">24 px</option><option value="28">28 px</option>
+            <option value="32">32 px</option>
+          </select>
+          <label for="reading-spacing">Line spacing</label>
+          <select id="reading-spacing" name="spacing">
+            <option value="1.4">Compact</option>
+            <option value="1.6" selected>Comfortable</option>
+            <option value="1.8">Roomy</option>
+          </select>
+          <label for="reading-theme">Background</label>
+          <select id="reading-theme" name="theme">
+            <option value="light">Light</option>
+            <option value="warm">Warm</option>
+            <option value="dark">Dark</option>
+          </select>
+          <label for="reading-marks">Code marks</label>
+          <select id="reading-marks" name="marks">
+            <option value="color">Light fills</option>
+            <option value="underline">Underlines only</option>
+            <option value="hidden">Hidden</option>
+          </select>
+          <p>Hidden marks can still be inspected. Reading preferences stay in this browser.</p>
+          <button id="reading-reset" type="button">Reset reading preferences</button>
+        </div>
+      </details>
+      <button id="verify-btn" title="Check the transcript against the audio">Verify against audio</button>
+    </div>
+  </div>
+  <div id="text-display"></div>
+  <div id="verify-view" hidden></div>
+</div>
+
+<div id="popover" hidden>
+  <div id="popover-main-row">
+    <input id="code-input" placeholder="search or create a code…" aria-label="Search or create a code" autocomplete="off" spellcheck="false">
+    <button id="code-save">Apply</button>
+  </div>
+  <div id="code-suggestions" hidden></div>
+  <div id="code-choice-hint" hidden>Choose a code, or select + Create new code.</div>
+</div>
+
+<div id="color-picker" hidden>
+  <div id="cp-title"></div>
+  <div id="cp-grid"></div>
+  <label id="cp-bulk" hidden>
+    <input type="checkbox" id="cp-bulk-check">
+    <span id="cp-bulk-text"></span>
+  </label>
+</div>
+
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>
