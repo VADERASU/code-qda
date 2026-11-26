@@ -11,7 +11,7 @@
 // one runs on into a segment that is somewhere else entirely. Flags are found
 // by jumping (⟨ ⟩ / n p), so you keep the conversation around them.
 
-import {apiFetch, apiPost} from './api.js';
+import {BASE, apiFetch, apiPost, apiUrl, sessionInfo, toSignIn} from './api.js';
 import {PAST, markPlace, placeAt, readingLine} from './place.js';
 import {esc} from './state.js';
 
@@ -1049,6 +1049,15 @@ export function initVerify(container, exitHandler) {
   // backstop. `pump` is what keeps the highlight and the loop bounds tight.
   audio.addEventListener('timeupdate', tick);
   audio.addEventListener('seeked', tick);
+  // A media element can't see status codes. If audio stops loading, the
+  // likeliest cause when hosted is a session that ended: check, and go to
+  // sign-in rather than leave the player silently dead.
+  audio.addEventListener('error', async () => {
+    if (!audio.getAttribute('src')) return;
+    const me = await sessionInfo();
+    if (me.signedOut) toSignIn();
+    else flash('Audio could not be loaded.', true);
+  });
   audio.addEventListener('loadedmetadata', () => {
     if (!canPlay()) return;
     // The real duration only arrives now, and the ticks are positioned against
@@ -1203,9 +1212,15 @@ export async function openVerify(fileName, atOffset = null) {
 
   const banner = root.querySelector('#vf-noaudio');
   if (view.tx.audioAvailable) {
-    audio.src = `/api/audio?name=${encodeURIComponent(view.tx.audio)}`;
+    audio.src = apiUrl(`/api/audio?name=${encodeURIComponent(view.tx.audio)}`);
     audio.playbackRate = SPEEDS[view.speedIndex];
     banner.hidden = true;
+  } else if (BASE) {
+    // Hosted: the audio lives on the server, set up by whoever runs it.
+    banner.hidden = false;
+    banner.innerHTML = `
+      <strong>Audio isn't available for this transcript.</strong> You can still edit the transcript, but playback is unavailable.
+      Ask the project's admin to add <code>${esc(view.tx.audio || '(no audio filename set)')}</code> to the project's audio folder.`;
   } else {
     banner.hidden = false;
     banner.innerHTML = `

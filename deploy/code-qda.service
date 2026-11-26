@@ -1,0 +1,33 @@
+# code-qda, hosted mode, as a systemd *user* service behind Tailscale Funnel.
+# Install and start (see docs/hosting.md for the full checklist):
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/code-qda.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now code-qda
+#   sudo loginctl enable-linger $USER      # keep running when logged out
+#   tailscale funnel --bg unix:/run/user/$(id -u)/code-qda/http.sock
+#
+# Adjust the repository path below if you cloned it somewhere else.
+
+[Unit]
+Description=code-qda (hosted; behind Tailscale Funnel)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/git/code-qda
+Environment=QDA_STATE_DIR=%h/.local/share/code-qda
+Environment=PYTHONUNBUFFERED=1
+# The socket lives in /run/user/<uid> (mode 0700): only this account and
+# tailscaled (root) can connect. Other accounts on this machine cannot.
+ExecStart=/usr/bin/python3 %h/git/code-qda/app.py --hosted --socket %t/code-qda/http.sock
+RuntimeDirectory=code-qda
+RuntimeDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

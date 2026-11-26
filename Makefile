@@ -29,11 +29,19 @@ ASR_PY   := $(VENV_ASR)/bin/python
 WX_STAMP  := $(VENV_WX)/.installed-$(SELECTED_BACKEND)
 ASR_STAMP := $(VENV_ASR)/.installed
 
-.PHONY: run prepare install install-asr install-wx check list clean clean-venvs help
+.PHONY: run test test-browser prepare install install-asr install-wx check list clean clean-venvs help
 
 ## run: serve the app on port 8000 (PORT=... to change; no dependencies)
 run:
 	@bash -c 'set -m; $(PYTHON) app.py $(PORT) & fg %1'
+
+## test: run the app's tests (stdlib only; synthetic data, never md/ or real accounts)
+test:
+	$(PYTHON) -m unittest discover -s tests -t tests
+
+## test-browser: drive sign-in, coding and admin pages in headless Chromium (CHROME=... to choose)
+test-browser:
+	$(PYTHON) tests/browser_e2e.py
 
 ## prepare: prepare AUDIO=... (default: all .m4a recordings); reuse saved transcripts, transcribe new ones
 prepare:

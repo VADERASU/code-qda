@@ -4,7 +4,7 @@ Transcription and analysis pipeline for a shadowing study of how robotics
 researchers manage experimental data, logs, and tribal knowledge.
 
 **No audio is in this repository, and none may be added.** Transcripts and
-their edit logs are tracked in `md/`; see Data handling.
+their edit logs live in `md/`, which is gitignored; see Data handling.
 
 ---
 
@@ -20,8 +20,8 @@ interview is 150 MB as WAV, and git keeps every version of it forever.
 | Source audio (`.m4a`, `.wav`, `.opus`) | IRB-approved storage | No |
 | Browser render (`md/audio/*.opus`) | Local, or a symlink into that storage | No |
 | ASR/alignment JSON, working files | `bescribe/data/` | No |
-| Installed `.tx.json` (transcript + edit log) | `md/` | **Yes** |
-| Installed transcripts (`.md`) and annotations | `md/` | **Yes** |
+| Installed `.tx.json` (transcript + edit log) | `md/` | No (own private repo, if any) |
+| Installed transcripts (`.md`) and annotations | `md/` | No (own private repo, if any) |
 | Speaker maps, pseudonym key | Encrypted, separate from transcripts | No |
 | Pipeline code | This repo | Yes |
 | Codebook, memos, findings | This repo | Yes |
@@ -30,7 +30,10 @@ interview is 150 MB as WAV, and git keeps every version of it forever.
 So there are two zones. `bescribe/data/` is gitignored in full — it is the
 working area, and everything in it is regenerable from audio. `md/` is the
 shared surface: `build_tx.py --install` copies the finished `.tx.json` and
-`.md` there, and those are committed and pulled by collaborators.
+`.md` there. It is no longer committed to this repository, which keeps code and
+data apart. Collaborators share it through the hosted app instead (see
+[../docs/hosting.md](../docs/hosting.md)). For version history, make `md/` its
+own private repository and commit to it from the server only.
 
 To move data between machines, use approved storage — not this repo, not Git
 LFS, not a release attachment.

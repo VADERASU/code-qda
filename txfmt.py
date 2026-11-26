@@ -40,7 +40,10 @@ import datetime
 import difflib
 import hashlib
 import json
+import os
 import re
+import stat
+import tempfile
 from pathlib import Path
 
 VERSION = 1
@@ -77,8 +80,55 @@ def load(path):
 
 
 def save(path, tx):
-    Path(path).write_text(
-        json.dumps(tx, indent=1, ensure_ascii=False), encoding="utf-8")
+    write_text_atomic(path, json.dumps(tx, indent=1, ensure_ascii=False))
+
+
+# Read once, while importing is still single-threaded: os.umask can only be
+# queried by setting it, which would race with other threads creating files.
+_UMASK = os.umask(0)
+os.umask(_UMASK)
+
+
+def write_text_atomic(path, text, mode=None):
+    """Replace a file's contents so a reader sees either all or none of them.
+
+    A crash or a concurrent reader mid-write must never find a half-written
+    transcript or annotation file, so the text goes to a temporary file in the
+    same directory and is renamed over the original. Symlinks are written
+    through, and the original's permission bits are kept unless `mode` is
+    given.
+    """
+    target = Path(os.path.realpath(path))
+    if mode is None:
+        try:
+            mode = stat.S_IMODE(os.stat(target).st_mode)
+        except FileNotFoundError:
+            mode = 0o666 & ~_UMASK
+    fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.",
+                               suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, mode)
+        os.replace(tmp, target)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except FileNotFoundError:
+            pass
+        raise
+    try:  # make the rename itself durable
+        dir_fd = os.open(target.parent, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(dir_fd)
+    except OSError:
+        pass
+    finally:
+        os.close(dir_fd)
 
 
 class MarkdownConflict(ValueError):

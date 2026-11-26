@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin · code-qda</title>
+<link rel="stylesheet" href="/static/auth.css">
+</head>
+<body data-page="admin">
+<main class="card wide">
+  <div class="topline">
+    <p class="wordmark">code-qda · admin</p>
+    <p class="muted"><a href="/">Projects</a></p>
+  </div>
+  <h1>People and projects</h1>
+  <p class="lede">Only people you invite can sign in, and they see only the projects you add them to.</p>
+
+  <h2>Invite someone</h2>
+  <form id="invite-form" novalidate>
+    <div class="grid">
+      <div>
+        <label for="invite-email">Email</label>
+        <input id="invite-email" type="email" required autocomplete="off">
+      </div>
+      <div>
+        <label for="invite-handle">Handle <span class="muted">(shown in edit history; defaults to the part before @)</span></label>
+        <input id="invite-handle" type="text" autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+    <fieldset id="invite-projects"><legend>Projects</legend></fieldset>
+    <label class="check"><input id="invite-admin" type="checkbox"> Site admin (can invite people and manage projects)</label>
+    <button class="primary inline" type="submit">Create invite link</button>
+  </form>
+  <div id="link-out" class="notice" hidden>
+    <p id="link-label"></p>
+    <div class="link-box">
+      <input id="link-value" type="text" readonly aria-label="One-time link">
+      <button type="button" id="link-copy">Copy</button>
+    </div>
+    <p class="muted">Email it to them yourself. It is shown only once, works once, and then expires.</p>
+  </div>
+  <p id="error" class="error" role="alert" hidden></p>
+
+  <h2>Pending links</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Email</th><th>Kind</th><th>Expires</th><th></th></tr></thead>
+    <tbody id="invites"></tbody>
+  </table></div>
+
+  <h2>People</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Email</th><th>Handle</th><th>Role</th><th>Last seen</th><th></th></tr></thead>
+    <tbody id="users"></tbody>
+  </table></div>
+
+  <h2>Projects</h2>
+  <div id="projects"></div>
+
+  <h2>New project</h2>
+  <form id="project-form" novalidate>
+    <div class="grid">
+      <div>
+        <label for="project-slug">Id <span class="muted">(in the URL: /p/<i>id</i>/)</span></label>
+        <input id="project-slug" type="text" pattern="[a-z0-9-]+" required spellcheck="false">
+      </div>
+      <div>
+        <label for="project-name">Name</label>
+        <input id="project-name" type="text" required>
+      </div>
+      <div>
+        <label for="project-data">Transcripts directory <span class="muted">(absolute path on the server)</span></label>
+        <input id="project-data" type="text" required spellcheck="false">
+      </div>
+      <div>
+        <label for="project-audio">Audio directory</label>
+        <input id="project-audio" type="text" required spellcheck="false">
+      </div>
+    </div>
+    <p id="roots" class="muted"></p>
+    <button class="primary inline" type="submit">Create project</button>
+  </form>
+</main>
+<script type="module" src="/static/admin.js"></script>
+</body>
+</html>

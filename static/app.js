@@ -1,5 +1,6 @@
 import {apiFetch, apiPost} from './api.js';
 import {initReading} from './reading.js';
+import {initSession} from './session.js';
 import {toTop} from './place.js';
 import {closeVerify, initVerify, isVerifying, openVerify} from './verify.js';
 import {
@@ -224,6 +225,8 @@ async function loadFile(name, {resume = true, updateUrl = true} = {}) {
   if (request !== fileLoad) return;
 
   state.rawText = fileData.content;
+  if (typeof codesData?.rev === 'string') codeRevs.set(name, codesData.rev);
+  codeLoads.set(name, (codeLoads.get(name) || 0) + 1);
   const normalized = normalizeCodesData(codesData);
   state.annotations = normalized.annotations;
   state.codeTree = normalized.codeTree;
@@ -298,7 +301,7 @@ window.addEventListener('popstate', restoreFromUrl);
 async function onOverviewInstanceClick(instance) {
   state.navigating = true;
   await loadFile(instance.file, {resume: false});
-  const element = document.querySelector(`.coded[data-ids~="${instance.annotId}"]`);
+  const element = document.querySelector(`.coded[data-ids~="${CSS.escape(String(instance.annotId))}"]`);
   if (element) {
     element.scrollIntoView({behavior: 'smooth', block: 'center'});
     const previousOutline = element.style.outline;
@@ -453,13 +456,9 @@ function reparentOverviewCode(codeId, newParentId) {
 
 async function saveOverviewTree(newTree) {
   try {
-    const response = await fetch('/api/save-codes', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({codeTree: newTree})
-    });
+    const response = await apiPost('/api/save-codes', {codeTree: newTree});
     const data = await response.json();
-    if (!data.ok) {
+    if (!response.ok || !data.ok) {
       throw new Error(data.error || 'save failed');
     }
     showSaveStatus('saved');
@@ -791,6 +790,17 @@ function reassignAnnotation(annotationId, newCodeId) {
 
 let codeSaveQueue = Promise.resolve();
 
+// The version of each transcript's annotations this tab last loaded or saved.
+// Sent with every save; if someone else saved in between, the server refuses
+// (409) rather than let this tab's copy replace their work.
+const codeRevs = new Map();
+// Bumped each time a transcript is (re)loaded. A save snapshotted before a
+// reload describes the old state; sending it with the new rev would undo
+// whatever the reload brought in, so it is dropped instead.
+const codeLoads = new Map();
+
+class SaveConflict extends Error {}
+
 async function saveCodes() {
   if (!state.currentFile) {
     return;
@@ -804,24 +814,55 @@ async function saveCodes() {
     codeTree: state.codeTree.slice().sort(compareNodes),
     annotations: state.annotations
   });
+  const loaded = codeLoads.get(file);
   const request = codeSaveQueue.then(async () => {
-    const response = await apiPost(`/api/codes?name=${encodeURIComponent(file)}`, payload);
+    if (codeLoads.get(file) !== loaded) return;
+    // Read at send time: the save queued before this one may have moved it.
+    const rev = codeRevs.get(file);
+    const response = await apiPost(`/api/codes?name=${encodeURIComponent(file)}`,
+      rev === undefined ? payload : {...payload, rev});
+    if (response.status === 409) throw new SaveConflict();
     if (!response.ok) throw new Error(response.status);
+    const data = await response.json().catch(() => ({}));
+    if (typeof data.rev === 'string') codeRevs.set(file, data.rev);
   });
   codeSaveQueue = request.catch(() => {});
   try {
     await request;
     if (state.currentFile === file) showSaveStatus('saved');
     loadOverview();
-  } catch {
-    if (state.currentFile === file) showSaveStatus('save failed', true);
+  } catch (error) {
+    if (state.currentFile !== file) return;
+    if (error instanceof SaveConflict) {
+      await reloadAfterConflict(file);
+    } else {
+      showSaveStatus('save failed', true);
+    }
   }
+}
+
+// Someone else saved this transcript's codes after this tab loaded them.
+// Show theirs, keep the reader's place, and say what happened.
+async function reloadAfterConflict(file) {
+  codeSaveQueue = codeSaveQueue.then(async () => {
+    const offset = readingOffset();
+    if (offset != null) placeToRestore = [offset, offset];
+    await loadFile(file, {resume: false, updateUrl: false});
+    showSaveStatus('changed by someone else — reloaded; redo your last change', true);
+  }).catch(() => showSaveStatus('save failed', true));
+  await codeSaveQueue;
 }
 
 async function deleteCodeNode(codeId) {
   state.renamingCodeId = null;
-  const response = await fetch(`/api/delete-code?id=${encodeURIComponent(codeId)}`, {method: 'POST'});
-  const data = await response.json();
+  let data;
+  try {
+    const response = await apiPost(`/api/delete-code?id=${encodeURIComponent(codeId)}`);
+    data = await response.json();
+  } catch {
+    showSaveStatus('cannot delete', true);
+    return;
+  }
   if (!data.ok) {
     showSaveStatus(data.error || 'cannot delete', true);
     return;
@@ -851,9 +892,16 @@ async function deleteCodeNode(codeId) {
 
 async function pruneEmptyCodes() {
   state.renamingCodeId = null;
-  const response = await fetch('/api/prune-codes', {method: 'POST'});
-  const data = await response.json();
-  const newTree = sanitizeCodeTree(data.codeTree);
+  let data;
+  try {
+    const response = await apiPost('/api/prune-codes');
+    if (!response.ok) throw new Error(response.status);
+    data = await response.json();
+  } catch {
+    showSaveStatus('prune failed', true);
+    return;
+  }
+  const newTree = sanitizeCodeTree(Array.isArray(data.codeTree) ? data.codeTree : []);
   const validIds = new Set(newTree.map(node => node.id));
   state.codeTree = newTree;
   state.annotations = state.annotations.filter(annotation => validIds.has(annotation.codeId));
@@ -866,6 +914,7 @@ async function pruneEmptyCodes() {
 }
 
 async function init() {
+  initSession();
   const results = await Promise.allSettled([loadFiles(), loadOverview()]);
   if (results.some(result => result.status === 'rejected')) {
     showSaveStatus('load failed', true);
@@ -885,11 +934,13 @@ init();
   const files = document.getElementById('files-panel');
   const handle = document.getElementById('files-resize-handle');
   const footer = document.getElementById('sidebar-footer');
+  const sessionBar = document.getElementById('session-bar');
   const defaultHeight = 140;
   let preferredHeight = defaultHeight;
 
   function limits() {
-    const available = Math.max(0, sidebar.clientHeight - footer.offsetHeight - handle.offsetHeight);
+    const available = Math.max(0, sidebar.clientHeight - footer.offsetHeight
+      - handle.offsetHeight - (sessionBar ? sessionBar.offsetHeight : 0));
     const max = Math.floor(available * 0.4);
     return {min: Math.min(64, max), max};
   }

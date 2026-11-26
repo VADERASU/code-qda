@@ -1,3 +1,6 @@
+md/
+# Atomic-write temporaries (txfmt.write_text_atomic); only ever left by a crash
+.*.tmp
 # macOS metadata
 .DS_Store
 

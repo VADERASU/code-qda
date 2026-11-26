@@ -1,8 +1,10 @@
 # Code-QDA
 
 A small tool for coding interview transcripts: open a `.md` file in the browser,
-highlight text, and give it a code. It runs on Python's standard library, saves
-locally, and shares work through git. No account or package installation needed.
+highlight text, and give it a code. It runs on Python's standard library and
+saves locally, with no account or package installation needed. To work with
+collaborators, host it for them with invite-only accounts; see
+[Hosting](#hosting-for-collaborators).
 
 ## Get started
 
@@ -13,6 +15,10 @@ python3 app.py
 Open `http://localhost:8000` and choose a transcript. To add your own, put `.md`
 files in `md/` and refresh the page. For another port, use `python3 app.py 8001`.
 `make run` starts the same app; it never runs transcription.
+
+This local mode has no login, so it only answers on this computer
+(`localhost`). It also refuses any request that arrives through a proxy, so
+exposing it by mistake fails closed. `make test` runs the app's tests.
 
 ## Coding transcripts
 
@@ -131,9 +137,24 @@ recording to `.opus` does not convert it; use `make prepare` for that.
 
 [Transcribe new recordings](#transcribing-new-recordings).
 
-## Sharing work with collaborators
+## Hosting for collaborators
 
-Track the codebook and each transcript's files together:
+`python3 app.py --hosted` serves the app to the internet through Tailscale
+Funnel.
+
+- **Accounts.** Accounts are invite-only. You send each person a one-time
+  link, and they choose a password.
+- **Projects.** Each study is a separate project, and people see only the
+  projects you add them to.
+- **Edit history.** Transcript edits record who made them.
+
+[docs/hosting.md](docs/hosting.md) covers setup, administration
+(`python3 app.py admin …` or the admin page), and the security model.
+
+## Where the data lives
+
+Transcript data is not in this repository: `md/` is gitignored. A project's
+files are:
 
 ```
 md/
@@ -141,11 +162,13 @@ md/
   interview-01.md
   interview-01.tx.json        ← transcript and review history, if present
   interview-01.annot.json     ← saved coding annotations
+  audio/                      ← playback audio (IRB-controlled; never in any repo)
 ```
 
-Pull before starting; commit the changed files together, then push. Separate
-annotation files let collaborators code different interviews independently,
-though changes to the shared codebook can still conflict.
+When hosted, the server's copy is the one everyone edits, so there is nothing
+to merge. For version history, make the data directory its own private git
+repository and commit from the server only. Moving the data between machines
+goes through approved storage.
 
 ## Analysis report
 

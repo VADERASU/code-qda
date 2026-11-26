@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set your password · code-qda</title>
+<link rel="stylesheet" href="/static/auth.css">
+</head>
+<body data-page="invite">
+<main class="card">
+  <p class="wordmark">code-qda</p>
+  <h1 id="invite-title">Set your password</h1>
+  <p id="invite-lede" class="lede">Checking your link…</p>
+  <form id="invite-form" novalidate hidden>
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="username" readonly>
+    <label for="password">New password</label>
+    <input id="password" type="password" autocomplete="new-password" minlength="12" required aria-describedby="password-hint">
+    <p id="password-hint" class="muted">At least 12 characters. A few unrelated words make a strong one.</p>
+    <label for="confirm">Confirm password</label>
+    <input id="confirm" type="password" autocomplete="new-password" required>
+    <button class="primary" type="submit">Set password and sign in</button>
+  </form>
+  <p id="error" class="error" role="alert" hidden></p>
+</main>
+<script type="module" src="/static/auth.js"></script>
+</body>
+</html>

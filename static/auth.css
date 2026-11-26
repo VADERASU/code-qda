@@ -1,0 +1,96 @@
+/* Sign-in, invite, project list and admin pages (hosted mode). Same visual
+   language as the coding view: system font, white cards on #fafafa, #1a73e8
+   for the one primary action. */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+[hidden] { display: none !important; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  background: #fafafa;
+  color: #222;
+  padding: 48px 16px;
+}
+a { color: #1a65ad; }
+.wordmark {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: #888; font-weight: 600; margin-bottom: 14px;
+}
+.card {
+  max-width: 380px; margin: 0 auto; background: #fff;
+  border: 1px solid #e0e0e0; border-radius: 8px; padding: 28px 28px 24px;
+}
+.card.wide { max-width: 960px; }
+h1 { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
+h2 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: #888; font-weight: 600; margin: 28px 0 10px;
+}
+.lede { color: #555; margin-bottom: 20px; }
+.muted { color: #737d87; font-size: 12px; }
+label { display: block; font-size: 12px; font-weight: 600; color: #444; margin: 14px 0 4px; }
+input[type=email], input[type=password], input[type=text] {
+  width: 100%; font: inherit; border: 1px solid #ccc; border-radius: 4px; padding: 8px 10px;
+  background: #fff; color: inherit;
+}
+input:focus-visible, button:focus-visible, select:focus-visible, a:focus-visible {
+  outline: 2px solid #1a73e8; outline-offset: 1px;
+}
+.check { display: flex; align-items: center; gap: 8px; font-weight: 400; color: #222; margin: 6px 0; }
+.check input { width: auto; }
+button {
+  font: inherit; border: 1px solid #ccc; border-radius: 4px; background: #fff;
+  padding: 6px 12px; cursor: pointer; color: inherit;
+}
+button:hover { background: #f1f3f5; }
+button.primary {
+  background: #1a73e8; border-color: #1a73e8; color: #fff; font-weight: 600;
+  padding: 9px 14px; margin-top: 20px; width: 100%;
+}
+button.primary:hover { background: #1257b0; border-color: #1257b0; }
+button.inline { width: auto; margin-top: 12px; }
+button:disabled { opacity: 0.5; cursor: default; }
+button.danger { color: #a32e2e; }
+button.danger:hover { background: #fcecec; }
+.error {
+  margin-top: 14px; padding: 8px 10px; border-radius: 4px;
+  background: #fcecec; color: #a32e2e; font-size: 13px;
+}
+.notice {
+  margin-top: 14px; padding: 10px 12px; border-radius: 4px;
+  background: #e8f0fe; color: #174ea6; font-size: 13px;
+}
+.foot { margin-top: 18px; color: #737d87; font-size: 12px; }
+
+/* project list */
+.projects { list-style: none; margin-top: 8px; }
+.projects li a {
+  display: block; padding: 10px 12px; border: 1px solid #e0e0e0; border-radius: 6px;
+  margin-bottom: 8px; text-decoration: none; color: #222; font-weight: 600;
+}
+.projects li a:hover { border-color: #1a73e8; background: #f6f9fe; }
+
+/* admin */
+.topline { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+@media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; font-weight: 600; color: #666; font-size: 12px; padding: 6px 8px; border-bottom: 1px solid #e0e0e0; }
+td { padding: 7px 8px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+td.actions { white-space: nowrap; text-align: right; }
+td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
+.tag { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 3px; background: #eef1f4; color: #555; }
+.tag.off { background: #fcecec; color: #a32e2e; }
+.link-box { display: flex; gap: 6px; margin-top: 8px; }
+.link-box input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.project { border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px 14px; margin-bottom: 10px; }
+.project-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.project code { font-size: 12px; color: #555; word-break: break-all; }
+.members { list-style: none; margin: 8px 0; }
+.members li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 3px 0; }
+.members li button { padding: 2px 8px; font-size: 12px; }
+.add-member { display: flex; gap: 6px; margin-top: 6px; }
+.add-member input { padding: 5px 8px; }
+fieldset { border: 0; }
+legend { font-size: 12px; font-weight: 600; color: #444; margin: 14px 0 4px; }

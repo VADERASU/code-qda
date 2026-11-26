@@ -672,7 +672,7 @@ function renderCodeSuggestions(query) {
     el.className = 'suggestion-item';
     if (item.codeId) el.dataset.codeId = item.codeId;
     const color = item.codeId ? getEffectiveColor(item.codeId) : previewCreateColor(item.label);
-    const swatch = `<span class="suggestion-swatch" style="background:${color}"></span>`;
+    const swatch = `<span class="suggestion-swatch" style="background:${esc(String(color))}"></span>`;
     // Matching offsets refer to the full path. Keep the highlights attached to
     // their original text when showing the leaf name ahead of its ancestors.
     const part = (start, end) => highlightedHtml(item.label.slice(start, end),
@@ -936,7 +936,7 @@ export function renderText() {
     const style = buildSpanStyle(group.annotations, lanes);
     const title = group.annotations.map(a => getCodePathLabel(a.codeId)).join('\n');
     const ids = group.annotations.map(a => a.id).join(' ');
-    html += `<span class="coded" tabindex="0" role="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="annotation-card" aria-label="${esc(`Inspect coding: ${title.replace(/\n/g, '; ')}`)}" data-id="${group.annotations[0].id}" data-ids="${ids}" style="${style}" data-title="${esc(title)}">${esc(state.rawText.slice(group.start, group.end))}</span>`;
+    html += `<span class="coded" tabindex="0" role="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="annotation-card" aria-label="${esc(`Inspect coding: ${title.replace(/\n/g, '; ')}`)}" data-id="${esc(String(group.annotations[0].id))}" data-ids="${esc(ids)}" style="${esc(style)}" data-title="${esc(title)}">${esc(state.rawText.slice(group.start, group.end))}</span>`;
     position = group.end;
   }
   html += esc(state.rawText.slice(position));
