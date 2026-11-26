@@ -186,6 +186,17 @@ tailscale serve status
 
 The status should show the app's HTTPS URL followed by `(tailnet only)`.
 
+### Stop sharing code-qda
+
+On the host, remove the HTTPS route on port 443 with the command for the active
+mode.
+
+- **Tailnet-only (Serve)** — `sudo tailscale serve --bg --https=443 off`
+- **Public (Funnel)** — `sudo tailscale funnel --bg --https=443 off`
+
+Use `tailscale serve status` or `tailscale funnel status` to check the active
+routes.
+
 ## Where the data lives
 
 Local mode uses the Git-ignored `md/` directory. Hosted projects use the
