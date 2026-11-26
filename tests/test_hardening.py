@@ -96,6 +96,44 @@ class LocalHardening(unittest.TestCase):
         self.assertEqual(out, b"")
         self.assertLess(time.monotonic() - start, 4)
 
+    def test_trickled_body_is_cut_off(self):
+        old = appmod.BODY_DEADLINE
+        appmod.BODY_DEADLINE = 0.6
+        self.addCleanup(setattr, appmod, "BODY_DEADLINE", old)
+        sock = socket.create_connection(("127.0.0.1", self.server.port), timeout=5)
+        self.addCleanup(sock.close)
+        sock.sendall(b"POST /api/save-codes HTTP/1.1\r\nHost: localhost\r\n"
+                     b"Content-Type: application/json\r\nContent-Length: 100\r\n\r\n{")
+        start = time.monotonic()
+        closed = False
+        while time.monotonic() - start < 4:
+            time.sleep(0.2)
+            try:
+                sock.sendall(b" ")  # each byte arrives well within the per-read timeout
+            except OSError:
+                closed = True
+                break
+            sock.setblocking(False)
+            try:
+                if sock.recv(1) == b"":
+                    closed = True
+                    break
+            except BlockingIOError:
+                pass
+            finally:
+                sock.setblocking(True)
+        self.assertTrue(closed, "a slowly trickled body must not hold the connection")
+        self.assertLess(time.monotonic() - start, 3)
+
+    def test_interim_continue_is_bare(self):
+        out = self.raw(b"POST /api/save-codes HTTP/1.1\r\nHost: localhost\r\n"
+                       b"Content-Type: application/json\r\nExpect: 100-continue\r\n"
+                       b"Content-Length: 15\r\n\r\n{\"codeTree\":[]}")
+        interim, rest = out.split(b"\r\n\r\n", 1)
+        self.assertEqual(interim, b"HTTP/1.1 100 Continue")
+        self.assertTrue(rest.startswith(b"HTTP/1.1 200"), rest[:40])
+        self.assertIn(b"Content-Security-Policy", rest)
+
     def test_security_headers_everywhere(self):
         for path in ("/", "/api/files", "/does-not-exist", "/static/app.js"):
             with self.subTest(path=path):

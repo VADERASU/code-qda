@@ -223,6 +223,17 @@ class Admin(unittest.TestCase):
                                              {"token": token, "password": "a fine passphrase"})
         self.assertEqual(again.status, 400)
 
+    def test_accepting_an_invite_signs_out_the_previous_user(self):
+        bob = signed_in(self.env, "bob@example.edu")
+        token = self.env["auth"].create_invite("erin@example.edu", by="test")
+        bobs_session = bob.cookie
+        resp = bob.post("/auth/invite/accept", {"token": token, "password": "a fine passphrase"})
+        self.assertEqual(resp.status, 200)
+        self.assertNotEqual(bob.cookie, bobs_session)
+        stale = hosted_client(self.env)
+        stale.cookie = bobs_session
+        self.assertEqual(stale.get("/p/beta/api/files").status, 401)
+
     def test_reset_link(self):
         bob = signed_in(self.env, "bob@example.edu")
         link = self.admin.post("/admin/api/reset", {"email": "bob@example.edu"}).json()["link"]

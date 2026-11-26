@@ -255,6 +255,11 @@ class HostedMixin:
         except Busy:
             self._json({"error": BUSY}, status=503, headers=[("Retry-After", "5")])
             return
+        if self._session_token():
+            # Whoever was signed in on this browser before is signed out,
+            # rather than left with an orphaned session.
+            from qda_auth import token_digest
+            auth.revoke_session(token_digest(self._session_token()))
         token = auth.create_session(email)
         auth.audit("login", email=email, ip=self.client_ip(), via="invite")
         self._json({"ok": True, "next": "/"}, headers=[self._session_cookie(token)])

@@ -241,8 +241,10 @@ copies, or the two will diverge. Audio stays out of every repository.
 
 **Editing at the same time.** Several people can code at once:
 
-- Codes they create merge; nobody's new code is erased by someone else's
-  stale tab.
+- **The codebook merges code by code.** A save only applies the codes that
+  person actually changed or created. A tab left open for an hour can't erase
+  codes created since, or undo someone else's renames, moves or deletions. A
+  code that someone's codings use is never dropped.
 - If two people change the codings of the *same transcript* at the same time,
   the second save is refused. That person's view reloads with a notice to
   redo their last change, rather than silently overwriting the first person's
@@ -254,9 +256,12 @@ Hosted mode is designed for these threats:
 
 - **Anyone on the internet.** Every page and API requires a session, except
   sign-in, invite and static code.
-- **Password guessing.** Login attempts are throttled per email, per client
-  address and overall. Hashing is scrypt, with a cap on concurrent hashes so a
-  login flood can't exhaust memory.
+- **Password guessing.** Login attempts are throttled per email (5 failures
+  per 15 minutes), per client address (20) and overall (500). Hashing is
+  scrypt, with a cap on concurrent hashes so a login flood can't exhaust
+  memory. The flip side: someone who knows an email can keep that person from
+  *signing in* by failing on purpose. People who are already signed in stay
+  signed in (sessions last up to 30 days).
 - **Other websites acting through a signed-in browser (CSRF).** Every
   state-changing request must carry this site's `Origin` and a JSON body. The
   cookie is `SameSite=Lax`, `HttpOnly`, `Secure` and `__Host-` prefixed.
@@ -266,6 +271,8 @@ Hosted mode is designed for these threats:
 - **One collaborator reaching another study's data.** Membership is checked
   before any file is touched, and a request can only name a file within the
   project's directories.
+- **Slow-request exhaustion.** Connections are capped, idle ones close after
+  30 seconds, and a request body must arrive within 20 seconds in total.
 - **Misconfiguration.** Local mode (`python3 app.py`) has no login, so it
   answers only `localhost` and refuses any request that came through a proxy.
   Pointing Funnel at it by mistake fails closed.

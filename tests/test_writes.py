@@ -94,6 +94,56 @@ class Saves(unittest.TestCase):
         resp = self.client.post("/api/save-codes", {"codeTree": stale["codeTree"]})
         self.assertIn("theirs-1", {n["id"] for n in resp.json()["codeTree"]})
 
+    def test_stale_tab_does_not_undo_others_edits(self):
+        """A tab sends its whole tree plus the tree it last synced (the base).
+        Codes it didn't touch keep whatever others have done to them since."""
+        self.client.post("/api/add-code", {"id": "spare-1", "name": "Spare", "parentId": None,
+                                           "order": 3})
+        stale = self.load()
+        base = stale["codeTree"]
+        # Another person renames one code and prunes the unused one.
+        other = Client(self.server)
+        tree = other.get("/api/codes?name=alpha.md").json()["codeTree"]
+        for node in tree:
+            if node["id"] == "code-root1":
+                node["name"] = "Tools (renamed)"
+        other.post("/api/save-codes", {"codeTree": tree, "codeTreeBase": base})
+        other.post("/api/prune-codes")
+        # The stale tab makes its own edit: a new code, used by a new annotation.
+        mine = [dict(n) for n in base] + [{"id": "mine-1", "name": "Mine", "parentId": None,
+                                           "order": 9}]
+        annotations = stale["annotations"] + [dict(stale["annotations"][0], id="ann-2",
+                                                    codeId="mine-1")]
+        resp = self.client.post("/api/codes?name=alpha.md",
+                                {"codeTree": mine, "codeTreeBase": base,
+                                 "annotations": annotations, "rev": stale["rev"]})
+        self.assertEqual(resp.status, 200, resp.body)
+        codes = {n["id"]: n["name"] for n in self.codes()}
+        self.assertEqual(codes, {"code-root1": "Tools (renamed)", "mine-1": "Mine"})
+
+    def test_own_edits_win_and_used_codes_survive(self):
+        stale = self.load()
+        base = stale["codeTree"]
+        # Someone deletes a code (it was unused at the time)...
+        self.client.post("/api/add-code", {"id": "gone-1", "name": "Gone", "parentId": None})
+        fresh = self.load()
+        self.client.post("/api/delete-code?id=gone-1")
+        # ...while a tab that still has it codes a passage with it and renames Tools.
+        mine = [dict(n) for n in fresh["codeTree"]]
+        for node in mine:
+            if node["id"] == "code-root1":
+                node["name"] = "Instruments"
+        annotations = fresh["annotations"] + [dict(fresh["annotations"][0], id="ann-3",
+                                                   codeId="gone-1")]
+        resp = self.client.post("/api/codes?name=alpha.md",
+                                {"codeTree": mine, "codeTreeBase": fresh["codeTree"],
+                                 "annotations": annotations, "rev": fresh["rev"]})
+        self.assertEqual(resp.status, 200, resp.body)
+        codes = {n["id"]: n["name"] for n in self.codes()}
+        self.assertEqual(codes["code-root1"], "Instruments")
+        self.assertIn("gone-1", codes, "a code an annotation uses is never dropped")
+        self.assertIsNotNone(base)
+
     def test_stale_annotation_save_is_refused(self):
         first = self.load()
         resp = self.client.post("/api/codes?name=alpha.md",

@@ -185,9 +185,14 @@ class Auth:
         self._hash_wait = hash_wait
         self._dummy = hash_password(secrets.token_urlsafe(16), n=scrypt_n)
         minute = 60
+        # Per account: slows guessing at one password to 480 tries a day.
+        # Per address (behind tailscaled only): one source can't sweep accounts.
+        # Overall: a ceiling on hashing work. Set high, because reaching it
+        # locks *everyone* out of signing in for a while (existing sessions
+        # keep working), and that shouldn't take one attacker an afternoon.
         self.limit_email = RateLimiter(5, 15 * minute)
         self.limit_ip = RateLimiter(20, 15 * minute)
-        self.limit_global = RateLimiter(100, 15 * minute)
+        self.limit_global = RateLimiter(500, 15 * minute)
         self.limit_tokens = RateLimiter(30, 15 * minute)
 
     def _hashing(self, fn, *args):

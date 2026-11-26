@@ -25,6 +25,7 @@ import socketserver
 import stat
 import sys
 import threading
+import time
 import traceback
 import urllib.parse
 from dataclasses import dataclass
@@ -56,6 +57,7 @@ AUDIO_CONTENT_TYPES = {
 MAX_BODY = 4 * 1024 * 1024      # a whole file's annotations fit many times over
 MAX_CONNECTIONS = 64
 REQUEST_TIMEOUT = 30            # seconds per socket operation, not per request
+BODY_DEADLINE = 20              # seconds to receive a whole request body
 
 # Inline style attributes are part of how coded spans are drawn, hence
 # 'unsafe-inline' for styles only. No inline script anywhere.
@@ -188,22 +190,51 @@ def disk_tree(nodes):
     return out
 
 
-def merge_code_trees(server_tree, client_tree):
+def _clean_tree(tree):
+    nodes = {}
+    for index, raw in enumerate(tree if isinstance(tree, list) else []):
+        node = _clean_node(raw, index)
+        if node is not None:
+            nodes[node["id"]] = node
+    return nodes
+
+
+def merge_code_trees(server_tree, client_tree, base_tree=None, keep_ids=()):
     """Fold a client's code tree into the shared one, by code id.
 
-    The client's version of each code it sends wins; codes only the server
-    has are kept. Clients always send their whole tree, and with several
-    people editing, a tab opened an hour ago must not erase every code
-    created since. Deleting a code has its own endpoint for that reason.
+    Clients always send their whole tree, and with several people editing, a
+    tab opened an hour ago must neither erase codes created since nor undo
+    renames, moves and deletions made since. So the client also sends
+    `base_tree`, the tree as it last synced it: a code it sends unchanged from
+    that base is not its edit, and the server's current version of it stands,
+    including its absence (someone deleted it). Only codes the client changed
+    or created are taken from the client.
+
+    `keep_ids` are codes the client's own annotations use; those (and their
+    ancestors) are never dropped, or the annotations would be orphaned.
+    Without a base (older clients), the client's version of each code wins.
+    Deleting a code has its own endpoint, so omission never means deletion.
     """
     merged = {}
     for raw in server_tree if isinstance(server_tree, list) else []:
         if isinstance(raw, dict) and isinstance(raw.get("id"), str):
             merged[raw["id"]] = raw
-    for index, raw in enumerate(client_tree):
-        node = _clean_node(raw, index)
-        if node is not None:
-            merged[node["id"]] = node
+    client = _clean_tree(client_tree)
+    base = _clean_tree(base_tree) if isinstance(base_tree, list) else None
+
+    keep = set()
+    for code_id in keep_ids:
+        seen = set()
+        while code_id in client and code_id not in seen:
+            keep.add(code_id)
+            seen.add(code_id)
+            code_id = client[code_id]["parentId"]
+
+    for code_id, node in client.items():
+        untouched = base is not None and base.get(code_id) == node
+        if untouched and not (code_id in keep and code_id not in merged):
+            continue
+        merged[code_id] = node
     return disk_tree(sanitize_code_tree(list(merged.values())))
 
 
@@ -294,6 +325,7 @@ class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
         self._body_pending = False
         self._responded = False
         self._sent_headers = set()
+        self._status_code = 200
 
     def setup(self):
         super().setup()
@@ -340,7 +372,17 @@ class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
         self._sent_headers.add(keyword.lower())
         super().send_header(keyword, value)
 
+    def send_response_only(self, code, message=None):
+        self._status_code = int(code)
+        super().send_response_only(code, message)
+
     def end_headers(self):
+        if 100 <= getattr(self, "_status_code", 200) < 200:
+            # An interim "100 Continue" (Expect: 100-continue): not the
+            # response, so none of the response's headers and no bookkeeping.
+            super().end_headers()
+            self._sent_headers = set()
+            return
         for name, value in SECURITY_HEADERS:
             if name.lower() not in self._sent_headers:
                 self.send_header(name, value)
@@ -507,10 +549,7 @@ class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
         if self.headers.get_content_type() != "application/json":
             self._status(415)
             return None
-        raw = self.rfile.read(self._body_length) if self._body_length else b""
-        if len(raw) != self._body_length:
-            self.close_connection = True
-            raise ConnectionResetError("request body cut short")
+        raw = self._read_body_bytes(self._body_length)
         self._body_pending = False
         try:
             data = json.loads(raw or b"{}")
@@ -520,6 +559,33 @@ class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
             self._json({"error": "Expected a JSON object."}, status=400)
             return None
         return data
+
+    def _read_body_bytes(self, length):
+        """Read exactly `length` body bytes within BODY_DEADLINE in total.
+
+        The socket timeout bounds each read, not the whole body: a client
+        trickling one byte at a time would otherwise hold a connection slot
+        forever, and enough of them would lock everyone out.
+        """
+        deadline = time.monotonic() + BODY_DEADLINE
+        chunks, remaining = [], length
+        try:
+            while remaining:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    raise TimeoutError("request body too slow")
+                self.connection.settimeout(left)
+                chunk = self.rfile.read1(min(remaining, 64 * 1024))
+                if not chunk:
+                    raise ConnectionResetError("request body cut short")
+                chunks.append(chunk)
+                remaining -= len(chunk)
+        except BaseException:
+            self.close_connection = True
+            raise
+        finally:
+            self.connection.settimeout(self.timeout)
+        return b"".join(chunks)
 
     def _write_body(self, limit):
         if not self._origin_ok():
@@ -677,7 +743,8 @@ class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
                 self._json({"error": "Malformed code tree."}, status=400)
                 return
             shared = self._load_shared_tree()
-            merged = merge_code_trees(shared, data["codeTree"])
+            merged = merge_code_trees(shared, data["codeTree"], data.get("codeTreeBase"),
+                                      keep_ids={a["codeId"] for a in annotations})
             if merged != shared:
                 write_json(self.project.codes_file, merged)
         text = json.dumps(annotations, indent=2, ensure_ascii=False)
@@ -1088,7 +1155,7 @@ class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
         if not isinstance(tree, list):
             self._status(400)
             return
-        merged = merge_code_trees(self._load_shared_tree(), tree)
+        merged = merge_code_trees(self._load_shared_tree(), tree, self.body.get("codeTreeBase"))
         write_json(self.project.codes_file, merged)
         self._json({"ok": True, "codeTree": merged})
 

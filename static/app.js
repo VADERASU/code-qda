@@ -230,6 +230,8 @@ async function loadFile(name, {resume = true, updateUrl = true} = {}) {
   const normalized = normalizeCodesData(codesData);
   state.annotations = normalized.annotations;
   state.codeTree = normalized.codeTree;
+  syncedCodeTree = structuredClone(normalized.codeTree);
+  treeLoads += 1;
   state.collapsed = new Set([...state.collapsed].filter(codeId => getCodeById(codeId)));
 
   renderFiles(noteTranscripts(files), loadFile);
@@ -456,7 +458,8 @@ function reparentOverviewCode(codeId, newParentId) {
 
 async function saveOverviewTree(newTree) {
   try {
-    const response = await apiPost('/api/save-codes', {codeTree: newTree});
+    const response = await apiPost('/api/save-codes',
+      {codeTree: newTree, codeTreeBase: state.overviewCodeTree});
     const data = await response.json();
     if (!response.ok || !data.ok) {
       throw new Error(data.error || 'save failed');
@@ -798,6 +801,12 @@ const codeRevs = new Map();
 // reload describes the old state; sending it with the new rev would undo
 // whatever the reload brought in, so it is dropped instead.
 const codeLoads = new Map();
+// The code tree as this tab last synced it with the server. Sent with each
+// save as the merge base: a code still identical to its base is not this
+// tab's edit, so the server keeps whatever others have done to it since
+// (renamed, moved, deleted) instead of reverting it to this tab's old copy.
+let syncedCodeTree = null;
+let treeLoads = 0;
 
 class SaveConflict extends Error {}
 
@@ -812,9 +821,11 @@ async function saveCodes() {
   const payload = structuredClone({
     version: 2,
     codeTree: state.codeTree.slice().sort(compareNodes),
-    annotations: state.annotations
+    annotations: state.annotations,
+    ...(syncedCodeTree ? {codeTreeBase: syncedCodeTree} : {})
   });
   const loaded = codeLoads.get(file);
+  const treeLoaded = treeLoads;
   const request = codeSaveQueue.then(async () => {
     if (codeLoads.get(file) !== loaded) return;
     // Read at send time: the save queued before this one may have moved it.
@@ -825,6 +836,9 @@ async function saveCodes() {
     if (!response.ok) throw new Error(response.status);
     const data = await response.json().catch(() => ({}));
     if (typeof data.rev === 'string') codeRevs.set(file, data.rev);
+    // What this tab sent is now what it last synced — unless a fresher tree
+    // was loaded while the save was in flight.
+    if (treeLoads === treeLoaded) syncedCodeTree = payload.codeTree;
   });
   codeSaveQueue = request.catch(() => {});
   try {
@@ -882,6 +896,7 @@ async function deleteCodeNode(codeId) {
     if (state.currentOverviewCode) await renderOverviewInstancesFor(state.currentOverviewCode);
   } else {
     state.codeTree = newTree;
+    syncedCodeTree = structuredClone(newTree);  // the server's tree, after its delete/prune
     state.annotations = state.annotations.filter(annotation => validIds.has(annotation.codeId));
     renderText();
     renderSidebar(sidebarHandlers);
@@ -904,6 +919,7 @@ async function pruneEmptyCodes() {
   const newTree = sanitizeCodeTree(Array.isArray(data.codeTree) ? data.codeTree : []);
   const validIds = new Set(newTree.map(node => node.id));
   state.codeTree = newTree;
+  syncedCodeTree = structuredClone(newTree);  // the server's tree, after its delete/prune
   state.annotations = state.annotations.filter(annotation => validIds.has(annotation.codeId));
   renderText();
   renderSidebar(sidebarHandlers);

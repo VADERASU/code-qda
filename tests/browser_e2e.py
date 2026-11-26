@@ -20,6 +20,7 @@ import sys
 import tempfile
 import time
 import unittest
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -214,12 +215,16 @@ class E2E(unittest.TestCase):
 
     def setUp(self):
         self.browser.problems.clear()
+        # (status, URL suffix) of refusals a test provokes on purpose; the
+        # browser logs those as errors, and nothing else may appear.
+        self.expected = set()
 
     def tearDown(self):
-        # Requests the test makes on purpose to prove a refusal.
-        expected = ("/p/beta/api/files", "/p/alpha/api/files")
-        problems = [p for p in self.browser.problems
-                    if not (p[0] == "log" and p[1] == "network" and p[3].endswith(expected))]
+        def provoked(p):
+            return (p[0] == "log" and p[1] == "network"
+                    and any(f"status of {code}" in p[2] and p[3].endswith(url)
+                            for code, url in self.expected))
+        problems = [p for p in self.browser.problems if not provoked(p)]
         self.assertEqual(problems, [], "console errors / CSP violations")
 
     def test_local_mode(self):
@@ -271,12 +276,72 @@ class E2E(unittest.TestCase):
         self.assertEqual(status, 200)
 
         # Another project is invisible.
+        self.expected |= {(404, "/p/beta/api/files"), (401, "/p/alpha/api/files")}
         self.assertEqual(b.js("fetch('/p/beta/api/files').then(r => r.status)"), 404)
 
         # Sign out from the bar.
         b.js("document.getElementById('session-signout').click()")
         b.wait_for("location.pathname === '/login'")
         self.assertEqual(b.js("fetch('/p/alpha/api/files').then(r => r.status)"), 401)
+
+    def test_two_people_editing(self):
+        """The real save path: this tab's saves keep another person's codebook
+        edits, and a conflicting save reloads with a notice instead of
+        overwriting their codings."""
+        b = self.browser
+        env = support.hosted_setup(self)
+        port = env["server"].port
+        origin = f"http://localhost:{port}"
+        env["app"].public_origin = origin
+        env["app"].allowed_hosts = frozenset({f"localhost:{port}"})
+        other = support.Client(env["server"], host=f"localhost:{port}", origin=origin)
+        other.post("/auth/login", {"email": "alice@example.edu",
+                                   "password": env["passwords"]["alice@example.edu"]})
+        other.post("/p/alpha/api/add-code", {"id": "theirs-1", "name": "Theirs", "parentId": None,
+                                             "order": 1})
+        codes_file = env["alpha"].md_dir / "codes.json"
+
+        def names():
+            return {n["id"]: n["name"] for n in json.loads(codes_file.read_text())}
+
+        def rename(old, new):
+            b.js(f"""document.querySelector('button[aria-label="Rename {old}"]').click()""")
+            b.wait_for("document.querySelector('.code-rename-input') !== null")
+            b.js(f"""(() => {{ const i = document.querySelector('.code-rename-input');
+                i.value = {json.dumps(new)};
+                i.dispatchEvent(new KeyboardEvent('keydown', {{key: 'Enter', bubbles: true}})); }})()""")
+
+        b.go(f"{origin}/login?next=" + urllib.parse.quote("/p/alpha/?file=one.md"))
+        b.js(f"""(() => {{ const f = document.getElementById('login-form');
+            f.email.value = 'carol@example.edu';
+            f.password.value = {json.dumps(env['passwords']['carol@example.edu'])};
+            f.requestSubmit(); }})()""")
+        b.wait_for("document.querySelectorAll('#text-display .coded').length === 1")
+
+        # Alice renames her code after this tab loaded; this tab renames Tools.
+        tree = other.get("/p/alpha/api/codes?name=one.md").json()["codeTree"]
+        base = [dict(n) for n in tree]
+        for n in tree:
+            if n["id"] == "theirs-1":
+                n["name"] = "Theirs renamed"
+        other.post("/p/alpha/api/save-codes", {"codeTree": tree, "codeTreeBase": base})
+        rename("Tools", "Tools v2")
+        b.wait_for("document.getElementById('save-status').textContent === 'saved'")
+        self.assertEqual(names(), {"code-root1": "Tools v2", "theirs-1": "Theirs renamed"})
+
+        # Alice changes this transcript's codings; this tab's next save conflicts.
+        rev = other.get("/p/alpha/api/codes?name=one.md").json()["rev"]
+        self.assertEqual(other.post("/p/alpha/api/codes?name=one.md",
+                                    {"annotations": [], "rev": rev}).status, 200)
+        self.expected.add((409, "/p/alpha/api/codes?name=one.md"))
+        rename("Tools v2", "Tools v3")
+        b.wait_for("document.getElementById('save-status').textContent.includes('someone else')")
+        b.wait_for("document.querySelectorAll('#text-display .coded').length === 0")  # hers now
+        self.assertEqual(names()["code-root1"], "Tools v2")  # the refused save changed nothing
+        rename("Tools v2", "Tools v3")  # redoing it works
+        b.wait_for("document.getElementById('save-status').textContent === 'saved'")
+        self.assertEqual(names()["code-root1"], "Tools v3")
+        self.assertEqual(json.loads((env["alpha"].md_dir / "one.annot.json").read_text()), [])
 
     def test_invite_and_admin_pages(self):
         b = self.browser
