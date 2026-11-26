@@ -2,9 +2,10 @@
 
 Each project points at its own data directory (the .md / .tx.json /
 .annot.json / codes.json files, possibly its own private git repo) and its
-own audio directory (IRB-controlled, never committed). Membership is the
-whole access model in hosted mode: a member sees everything in a project, a
-non-member cannot tell it exists.
+own audio directory (IRB-controlled, never committed). Hosted projects use
+either storage allocated by the app or existing directories registered by an
+admin. Membership is the whole access model in hosted mode: a member sees
+everything in a project, a non-member cannot tell it exists.
 
 Local mode has exactly one implicit project, the repository's md/ directory.
 """
@@ -12,10 +13,15 @@ from __future__ import annotations
 
 import os
 import re
+import tempfile
 import threading
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 
+from qda_store import STATE_DIR_MODE, StateDirError, ensure_private_dir
+
+ROOT = Path(__file__).resolve().parent
 SLUG_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?")
 PROJECTS_FILE = "projects.json"
 EMPTY = {"version": 1, "projects": {}}
@@ -160,27 +166,61 @@ class Registry:
 
     def add(self, slug, name, data_dir, audio_dir, *, now, protected=(),
             forbidden_inside=(), roots=None):
+        """Register existing folders."""
+        return self._add(
+            slug, name, data_dir, audio_dir, now=now, storage="registered",
+            protected=(self.store.dir, *protected),
+            forbidden_inside=(self.store.dir, *forbidden_inside), roots=roots)
+
+    def create(self, slug, name, *, now):
+        """Allocate private storage for a new hosted project."""
+        try:
+            return self._add(slug, name, now=now, storage="managed")
+        except (OSError, StateDirError) as e:
+            raise ProjectError(f"Could not create project storage: {e}") from e
+
+    def _allocate_storage(self, slug, cleanup):
+        root = self.store.dir.resolve() / "projects"
+        if _overlaps(root, ROOT) or _overlaps(root, Path(os.path.realpath(ROOT / "md"))):
+            raise ProjectError("Managed project storage overlaps the checkout or local transcripts")
+        root = ensure_private_dir(root)
+        directory = Path(tempfile.mkdtemp(prefix=f"{slug}-", dir=root))
+        cleanup.callback(directory.rmdir)
+        data, audio = directory / "transcripts", directory / "audio"
+        for path in (data, audio):
+            path.mkdir(mode=STATE_DIR_MODE)
+            cleanup.callback(path.rmdir)
+        return data, audio
+
+    def _add(self, slug, name, data_dir=None, audio_dir=None, *, now, storage,
+             protected=(), forbidden_inside=(), roots=None):
         if not isinstance(slug, str) or not SLUG_RE.fullmatch(slug):
             raise ProjectError(
-                "project id must be 1-40 lowercase letters, digits or hyphens")
+                "Project ID must be 1–40 characters, using lowercase letters, digits or "
+                "hyphens, and start and end with a letter or digit.")
+        if name is not None and not isinstance(name, str):
+            raise ProjectError("Project name must be text")
         name = (name or "").strip() or slug
         if len(name) > 120:
             raise ProjectError("project name is too long")
 
-        def change(doc):
+        with self.store.locked(), ExitStack() as cleanup:
+            doc = self.store.read(PROJECTS_FILE, EMPTY, fresh=True)
             projects = doc.setdefault("projects", {})
             if slug in projects:
                 raise ProjectError(f"project {slug} already exists")
+            if storage == "managed":
+                data_dir, audio_dir = self._allocate_storage(slug, cleanup)
             others = [(r["data_dir"], r["audio_dir"]) for r in projects.values()]
             data, audio = validate_project_dirs(
                 data_dir, audio_dir, others=others, protected=protected,
                 forbidden_inside=forbidden_inside, roots=roots)
-            projects[slug] = {"name": name, "data_dir": str(data),
-                              "audio_dir": str(audio), "members": [],
-                              "created": now}
-            return projects[slug]
-
-        return self.store.update(PROJECTS_FILE, EMPTY, change)
+            record = {"name": name, "data_dir": str(data), "audio_dir": str(audio),
+                      "storage": storage, "members": [], "created": now}
+            projects[slug] = record
+            self.store.write(PROJECTS_FILE, doc)
+            cleanup.pop_all()
+            return record
 
     def set_member(self, slug, email, member):
         def change(doc):

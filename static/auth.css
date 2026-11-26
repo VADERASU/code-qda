@@ -33,7 +33,7 @@ input[type=email], input[type=password], input[type=text] {
   width: 100%; font: inherit; border: 1px solid #ccc; border-radius: 4px; padding: 8px 10px;
   background: #fff; color: inherit;
 }
-input:focus-visible, button:focus-visible, select:focus-visible, a:focus-visible {
+input:focus-visible, button:focus-visible, select:focus-visible, a:focus-visible, summary:focus-visible {
   outline: 2px solid #1a73e8; outline-offset: 1px;
 }
 .check { display: flex; align-items: center; gap: 8px; font-weight: 400; color: #222; margin: 6px 0; }
@@ -87,6 +87,10 @@ td.actions button { padding: 3px 8px; font-size: 12px; margin-left: 4px; }
 .project { border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px 14px; margin-bottom: 10px; }
 .project-head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .project code { font-size: 12px; color: #555; word-break: break-all; }
+.project-storage { color: #737d87; font-size: 12px; margin-top: 4px; }
+.project-form-note { margin-top: 6px; overflow-wrap: anywhere; }
+.register-project { border-top: 1px solid #e0e0e0; margin-top: 18px; padding-top: 12px; }
+.project-storage summary, .register-project summary { cursor: pointer; width: fit-content; }
 .members { list-style: none; margin: 8px 0; }
 .members li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 3px 0; }
 .members li button { padding: 2px 8px; font-size: 12px; }

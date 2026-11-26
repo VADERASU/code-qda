@@ -381,6 +381,27 @@ class E2E(unittest.TestCase):
         b.wait_for("document.querySelectorAll('#invites tr').length === 1")
         self.assertIn("frank@example.edu", b.js("document.getElementById('projects').textContent"))
 
+        b.js("""(() => { const form = document.getElementById('project-form');
+            form.elements.name.value = 'Managed study';
+            form.elements.slug.value = 'managed-study';
+            form.requestSubmit(); })()""")
+        b.wait_for("document.getElementById('project-status').textContent.includes('Project created')")
+        self.assertIn("Managed storage", b.js("document.getElementById('projects').textContent"))
+
+        data = env["base"] / "roots" / "data" / "existing"
+        audio = env["base"] / "roots" / "audio" / "existing"
+        data.mkdir()
+        audio.mkdir()
+        b.js(f"""(() => {{ const form = document.getElementById('register-project-form');
+            form.closest('details').open = true;
+            form.elements.name.value = 'Existing study';
+            form.elements.slug.value = 'existing-study';
+            form.elements.dataDir.value = {json.dumps(str(data))};
+            form.elements.audioDir.value = {json.dumps(str(audio))};
+            form.requestSubmit(); }})()""")
+        b.wait_for("document.getElementById('project-status').textContent.includes('Project registered')")
+        self.assertEqual(env["registry"].records()["existing-study"]["data_dir"], str(data.resolve()))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

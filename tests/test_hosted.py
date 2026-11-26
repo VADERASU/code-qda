@@ -5,8 +5,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from qda_projects import ProjectError, Registry
+from qda_store import Store
 from support import (ORIGIN, ROOT, Client, appmod, hosted_client, hosted_setup, signed_in,
-                     txfmt)
+                     temp_dir, txfmt)
 
 PROJECT_PATHS = ["/p/alpha/", "/p/alpha/api/files", "/p/alpha/api/file?name=one.md",
                  "/p/alpha/api/codes?name=one.md", "/p/alpha/api/codes-overview",
@@ -254,7 +256,7 @@ class Admin(unittest.TestCase):
         self.assertEqual(self.admin.post("/admin/api/user", {"email": "alice@example.edu",
                                                              "disabled": True}).status, 400)
 
-    def test_project_creation_is_confined(self):
+    def test_registering_existing_project_is_confined(self):
         base = self.env["base"]
         (base / "roots" / "data" / "gamma").mkdir()
         (base / "roots" / "audio" / "gamma").mkdir()
@@ -273,6 +275,51 @@ class Admin(unittest.TestCase):
                 self.assertEqual(resp.status, status, resp.body)
         self.assertEqual(self.admin.post("/admin/api/project", {"slug": "Bad Slug!", "name": "x",
                                                                 "dataDir": "/", "audioDir": "/"}).status, 400)
+
+    def test_creates_project_with_private_storage_without_registration_roots(self):
+        self.env["app"].roots = {"data": [], "audio": []}
+        self.env["store"].update("projects.json", {}, lambda doc: doc["projects"]["alpha"].pop("storage"))
+        response = self.admin.post("/admin/api/project/create", {"slug": "md", "name": "New study"})
+        self.assertEqual(response.status, 200, response.body)
+        projects = {project["slug"]: project for project in response.json()["projects"]}
+        self.assertEqual(projects["alpha"]["storage"], "registered")  # pre-existing record
+        project = projects["md"]
+        self.assertEqual(project["storage"], "managed")
+        self.assertEqual(project["members"], [])
+        data, audio = Path(project["dataDir"]), Path(project["audioDir"])
+        root = self.env["state"].resolve() / "projects"
+        self.assertEqual(data.parent.parent, root)
+        self.assertEqual(audio.parent, data.parent)
+        self.assertNotEqual(data, audio)
+        for path in (root, data.parent, data, audio):
+            self.assertTrue(path.is_dir())
+            self.assertEqual(path.stat().st_mode & 0o077, 0)
+        self.assertEqual(list(data.iterdir()), [])
+        self.assertEqual(list(audio.iterdir()), [])
+        self.assertEqual(appmod.build_hosted_app(self.env["state"]).registry.records()["md"]["data_dir"], str(data))
+        self.assertEqual(self.admin.get("/p/alpha/api/files").status, 200)
+        self.assertEqual(self.admin.get("/p/md/api/files").status, 404)
+        self.assertEqual(self.admin.post("/admin/api/members", {"slug": "md", "email": "alice@example.edu",
+                                                               "member": True}).status, 200)
+        self.assertEqual(self.admin.get("/p/md/api/files").json(), [])
+        self.assertEqual(self.admin.post("/admin/api/project/create", {"slug": "md"}).status, 400)
+        self.assertEqual(list(root.iterdir()), [data.parent])
+
+
+class ManagedStorage(unittest.TestCase):
+    def test_failed_registry_write_cleans_up_and_allows_retry(self):
+        state = temp_dir(self) / "state"
+        state.mkdir(mode=0o700)
+        store = Store(state)
+        registry = Registry(store)
+        with mock.patch.object(store, "write", side_effect=OSError("disk full")):
+            with self.assertRaisesRegex(ProjectError, "disk full"):
+                registry.create("study", "Study", now=1.0)
+        self.assertEqual(registry.records(), {})
+        self.assertEqual(list((state / "projects").iterdir()), [])
+        project = registry.create("study", "Study", now=1.0)
+        with self.assertRaisesRegex(ProjectError, "inside"):
+            registry.add("alias", "Alias", project["data_dir"], project["audio_dir"], now=2.0)
 
 
 class UnixSocket(unittest.TestCase):

@@ -57,28 +57,47 @@
   <div id="projects"></div>
 
   <h2>New project</h2>
-  <form id="project-form" novalidate>
+  <form id="project-form">
     <div class="grid">
       <div>
-        <label for="project-slug">Id <span class="muted">(in the URL: /p/<i>id</i>/)</span></label>
-        <input id="project-slug" type="text" pattern="[a-z0-9-]+" required spellcheck="false">
-      </div>
-      <div>
         <label for="project-name">Name</label>
-        <input id="project-name" type="text" required>
+        <input id="project-name" name="name" type="text" maxlength="120" required>
       </div>
       <div>
-        <label for="project-data">Transcripts directory <span class="muted">(absolute path on the server)</span></label>
-        <input id="project-data" type="text" required spellcheck="false">
-      </div>
-      <div>
-        <label for="project-audio">Audio directory</label>
-        <input id="project-audio" type="text" required spellcheck="false">
+        <label for="project-slug">Project URL ID <span class="muted">(/p/<i>id</i>/)</span></label>
+        <input id="project-slug" name="slug" type="text" maxlength="40" pattern="[a-z0-9]([a-z0-9\-]{0,38}[a-z0-9])?" title="Use lowercase letters, digits or hyphens. Start and end with a letter or digit." required spellcheck="false">
       </div>
     </div>
-    <p id="roots" class="muted"></p>
+    <p class="muted project-form-note">The app creates private folders for transcripts and audio.</p>
     <button class="primary inline" type="submit">Create project</button>
   </form>
+
+  <details class="register-project">
+    <summary>Register existing project</summary>
+    <p id="roots" class="muted project-form-note"></p>
+    <form id="register-project-form" hidden>
+      <div class="grid">
+        <div>
+          <label for="register-name">Name</label>
+          <input id="register-name" name="name" type="text" maxlength="120" required>
+        </div>
+        <div>
+          <label for="register-slug">Project URL ID <span class="muted">(/p/<i>id</i>/)</span></label>
+          <input id="register-slug" name="slug" type="text" maxlength="40" pattern="[a-z0-9]([a-z0-9\-]{0,38}[a-z0-9])?" title="Use lowercase letters, digits or hyphens. Start and end with a letter or digit." required spellcheck="false">
+        </div>
+        <div>
+          <label for="register-data">Transcripts directory</label>
+          <input id="register-data" name="dataDir" type="text" required spellcheck="false">
+        </div>
+        <div>
+          <label for="register-audio">Audio directory</label>
+          <input id="register-audio" name="audioDir" type="text" required spellcheck="false">
+        </div>
+      </div>
+      <button class="inline" type="submit">Register project</button>
+    </form>
+  </details>
+  <p id="project-status" class="notice" role="status" hidden></p>
 </main>
 <script type="module" src="/static/admin.js"></script>
 </body>

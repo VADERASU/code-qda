@@ -93,10 +93,10 @@ python3 app.py admin invite you@example.edu --admin --handle rolando --project r
 
 The last command prints your own invite link; keep it for step 5.
 
-**Optional:** to create projects from the admin page instead of the command
-line, add `--data-root DIR --audio-root DIR` to `admin init`. The web page can
-only register directories under those roots, so a stolen admin password can't
-point a project at arbitrary files.
+**Optional:** to register existing study folders from the admin page, add
+`--data-root DIR --audio-root DIR` to `admin init`. The registration form can
+only use directories under those roots. New projects with managed storage can
+be created from the admin page with the default configuration.
 
 ### 4. Run it as a service
 
@@ -208,7 +208,23 @@ Membership changes take effect on the person's very next request. Disabling
 an account, resetting its password, or **Sign out** on the admin page ends all
 of that person's sessions immediately.
 
-A new project needs its two directories to exist first:
+## Creating and registering projects
+
+Use **Create project** on the Admin page for an empty study. Enter a name and a
+unique URL ID. The app creates private `transcripts/` and `audio/` folders under
+`<state-directory>/projects/` in a unique subdirectory for the study. Open
+**Managed storage** in the project list for the exact paths to put files in.
+Use this option when the state directory is on approved storage for your
+transcripts and recordings. Add members in the project list to give them access.
+
+```sh
+python3 app.py admin project create study2 --name "Study 2"
+```
+
+Use **Register existing project** to attach folders already on the server,
+including a local `md/` study or a study on a separate storage volume. Both
+folders must already exist. The app keeps the files in place and checks for
+overlap with registered project folders.
 
 ```sh
 python3 app.py admin project add study2 --name "Study 2" --data /abs/path/study2/md --audio /abs/path/study2/audio
@@ -224,10 +240,10 @@ python3 app.py admin project add study2 --name "Study 2" --data /abs/path/study2
 | Stop everything | `tailscale funnel reset; systemctl --user stop code-qda` |
 | Who did what | `~/.local/share/code-qda/audit.log` (JSON lines: logins, failures, invites, membership, every write) |
 
-**Backups.** Back up two things, to private storage:
-
-- each project's data directory, which holds the coding work;
-- the state directory, which holds password hashes and sessions.
+**Backups.** Back up the state directory and the registered project data
+directories to approved private storage. The state directory contains the
+accounts, sessions, registry, and the transcripts and audio of projects using
+managed storage.
 
 Never put the state directory in git or a shared folder.
 

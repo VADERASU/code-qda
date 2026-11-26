@@ -199,8 +199,9 @@ routes.
 
 ## Where the data lives
 
-Local mode uses the Git-ignored `md/` directory. Hosted projects use the
-data and audio directories you register for each study.
+Local mode uses the Git-ignored `md/` directory. Hosted projects can use
+private storage created by the app or existing directories registered for the
+study. [Creating and registering projects](docs/hosting.md#creating-and-registering-projects)
 
 ```
 md/

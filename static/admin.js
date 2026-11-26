@@ -144,9 +144,11 @@ function renderProjects() {
     box.append(h('div', {class: 'project'},
       h('div', {class: 'project-head'},
         h('strong', {}, project.name, ' ', h('span', {class: 'muted'}, `/p/${project.slug}/`)),
-        h('a', {href: `/p/${encodeURIComponent(project.slug)}/`}, 'Open')),
-      h('p', {class: 'muted'}, 'Transcripts ', h('code', {}, project.dataDir)),
-      h('p', {class: 'muted'}, 'Audio ', h('code', {}, project.audioDir)),
+        project.members.includes(state.me) ? h('a', {href: `/p/${encodeURIComponent(project.slug)}/`}, 'Open') : null),
+      h('details', {class: 'project-storage'},
+        h('summary', {}, project.storage === 'managed' ? 'Managed storage' : 'Registered folders'),
+        h('p', {}, 'Transcripts ', h('code', {}, project.dataDir)),
+        h('p', {}, 'Audio ', h('code', {}, project.audioDir))),
       members, add));
   }
   let datalist = document.getElementById('known-emails');
@@ -159,13 +161,15 @@ function renderProjects() {
 
 function renderRoots() {
   const roots = state.roots || {data: [], audio: []};
+  const canRegister = roots.data.length > 0 && roots.audio.length > 0;
+  document.getElementById('register-project-form').hidden = !canRegister;
   const el = document.getElementById('roots');
-  if (!roots.data.length || !roots.audio.length) {
-    el.textContent = 'Creating projects here needs allowed directories, set on the server with '
-      + '`python3 app.py admin init --public-origin … --data-root DIR --audio-root DIR`. '
-      + 'Or use `python3 app.py admin project add` there.';
+  if (!canRegister) {
+    el.replaceChildren('Configure transcript and audio roots on the server to register folders here. '
+      + 'You can also register them on the server with ', h('code', {}, 'python3 app.py admin project add'), '.');
   } else {
-    el.textContent = `Transcripts must be inside ${roots.data.join(' or ')}; audio inside ${roots.audio.join(' or ')}.`;
+    el.textContent = `Use existing absolute paths. Transcripts must be inside ${roots.data.join(' or ')}. `
+      + `Audio must be inside ${roots.audio.join(' or ')}.`;
   }
 }
 
@@ -206,14 +210,28 @@ document.getElementById('link-copy').addEventListener('click', async () => {
   }
 });
 
-document.getElementById('project-form').addEventListener('submit', async event => {
-  event.preventDefault();
-  const value = id => document.getElementById(id).value.trim();
-  const result = await call('/admin/api/project', {
-    slug: value('project-slug'), name: value('project-name'),
-    dataDir: value('project-data'), audioDir: value('project-audio')
+function bindProjectForm(id, endpoint, successMessage) {
+  const form = document.getElementById(id);
+  form.addEventListener('submit', async event => {
+    event.preventDefault();
+    const data = Object.fromEntries([...new FormData(form)].map(([key, value]) => [key, value.trim()]));
+    const status = document.getElementById('project-status');
+    status.hidden = true;
+    const button = form.querySelector('button[type=submit]');
+    button.disabled = true;
+    try {
+      if (await call(endpoint, data)) {
+        form.reset();
+        status.textContent = successMessage;
+        status.hidden = false;
+      }
+    } finally {
+      button.disabled = false;
+    }
   });
-  if (result) event.target.reset();
-});
+}
+
+bindProjectForm('project-form', '/admin/api/project/create', 'Project created. You can add members in the project list.');
+bindProjectForm('register-project-form', '/admin/api/project', 'Project registered. You can add members in the project list.');
 
 call('/admin/api/state');

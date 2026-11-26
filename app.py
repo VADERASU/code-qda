@@ -279,7 +279,7 @@ class App:
     trust_forwarded: bool = False       # X-Forwarded-For is set by tailscaled
     max_body: int = MAX_BODY
     state_dir: Path | None = None
-    roots: dict | None = None           # where the admin page may put projects
+    roots: dict | None = None           # allowed roots for registering existing storage
 
 
 # (method, path under the project) -> (handler, writes?)

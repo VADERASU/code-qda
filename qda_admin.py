@@ -4,6 +4,7 @@
     python3 app.py admin invite EMAIL [--admin] [--handle H] [--project SLUG ...]
     python3 app.py admin reset EMAIL
     python3 app.py admin disable EMAIL | enable EMAIL | revoke-sessions EMAIL
+    python3 app.py admin project create SLUG --name NAME
     python3 app.py admin project add SLUG --name NAME --data DIR --audio DIR
     python3 app.py admin project grant SLUG EMAIL | revoke SLUG EMAIL
     python3 app.py admin list
@@ -140,13 +141,15 @@ def cmd_project(args, store):
     registry = Registry(store)
     auth = qda_auth.Auth(store)
     try:
-        if args.action == "add":
-            rec = registry.add(args.slug, args.name, args.data, args.audio, now=time.time(),
-                               protected=[ROOT, store.dir],
-                               forbidden_inside=[ROOT / "static", ROOT / "pages",
-                                                 ROOT / ".git", store.dir])
-            auth.audit("project_created", project=args.slug, data_dir=rec["data_dir"],
-                       audio_dir=rec["audio_dir"], by="cli")
+        if args.action in ("create", "add"):
+            if args.action == "create":
+                rec = registry.create(args.slug, args.name, now=time.time())
+            else:
+                rec = registry.add(args.slug, args.name, args.data, args.audio, now=time.time(),
+                                   protected=[ROOT], forbidden_inside=[ROOT / "static",
+                                                                      ROOT / "pages", ROOT / ".git"])
+            auth.audit("project_created", project=args.slug, storage=rec["storage"],
+                       data_dir=rec["data_dir"], audio_dir=rec["audio_dir"], by="cli")
             print(f"project {args.slug}: data {rec['data_dir']}, audio {rec['audio_dir']}")
             if Path(rec["audio_dir"]).is_relative_to(rec["data_dir"]):
                 print("note: the audio directory is inside the data directory; make sure "
@@ -224,6 +227,9 @@ def main(argv):
 
     p = sub.add_parser("project", help="create projects and manage members")
     psub = p.add_subparsers(dest="action", required=True)
+    pc = psub.add_parser("create", help="create a project with private storage")
+    pc.add_argument("slug", help="URL id, e.g. robotics")
+    pc.add_argument("--name", required=True)
     pa = psub.add_parser("add", help="register a project's data and audio directories")
     pa.add_argument("slug", help="URL id, e.g. robotics")
     pa.add_argument("--name", required=True)

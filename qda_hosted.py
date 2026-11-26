@@ -15,6 +15,7 @@ produce the same empty 404, before any filesystem access.
 from __future__ import annotations
 
 import re
+import time
 import urllib.parse
 from pathlib import Path
 
@@ -38,7 +39,8 @@ ADMIN_POSTS = {
     "/admin/api/reset": "_admin_reset",
     "/admin/api/invite/revoke": "_admin_revoke_invite",
     "/admin/api/user": "_admin_user",
-    "/admin/api/project": "_admin_project",
+    "/admin/api/project": "_admin_register_project",
+    "/admin/api/project/create": "_admin_create_project",
     "/admin/api/members": "_admin_members",
 }
 
@@ -303,7 +305,8 @@ class HostedMixin:
         state = app.auth.overview()
         state["projects"] = [
             {"slug": slug, "name": rec.get("name") or slug, "dataDir": rec["data_dir"],
-             "audioDir": rec["audio_dir"], "members": rec.get("members", [])}
+             "audioDir": rec["audio_dir"], "storage": rec.get("storage", "registered"),
+             "members": rec.get("members", [])}
             for slug, rec in sorted(app.registry.records().items())]
         state["roots"] = app.roots or {"data": [], "audio": []}
         state["me"] = self.user["email"]
@@ -361,18 +364,26 @@ class HostedMixin:
             auth.revoke_user_sessions(email)
             auth.audit("sessions_revoked", email=email, by=self.user["email"])
 
-    def _admin_project(self, body):
-        import time
+    def _admin_create_project(self, body):
         app = self.server.app
+        slug = body.get("slug")
+        rec = app.registry.create(slug, body.get("name"), now=time.time())
+        self._audit_project(slug, rec)
+
+    def _admin_register_project(self, body):
+        app = self.server.app
+        slug = body.get("slug")
         rec = app.registry.add(
-            body.get("slug"), body.get("name"), str(body.get("dataDir") or ""),
+            slug, body.get("name"), str(body.get("dataDir") or ""),
             str(body.get("audioDir") or ""), now=time.time(),
-            protected=[ROOT, app.state_dir],
-            forbidden_inside=[STATIC_DIR, PAGES_DIR, app.state_dir, ROOT / ".git"],
+            protected=[ROOT], forbidden_inside=[STATIC_DIR, PAGES_DIR, ROOT / ".git"],
             roots=app.roots or {"data": [], "audio": []})
-        app.auth.audit("project_created", project=body.get("slug"),
-                       data_dir=rec["data_dir"], audio_dir=rec["audio_dir"],
-                       by=self.user["email"])
+        self._audit_project(slug, rec)
+
+    def _audit_project(self, slug, rec):
+        self.server.app.auth.audit(
+            "project_created", project=slug, storage=rec["storage"],
+            data_dir=rec["data_dir"], audio_dir=rec["audio_dir"], by=self.user["email"])
 
     def _admin_members(self, body):
         app = self.server.app
