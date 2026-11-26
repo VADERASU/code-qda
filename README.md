@@ -155,6 +155,37 @@ over HTTPS with Tailscale Funnel. [Hosting guide](docs/hosting.md)
 Manage accounts and projects from the **Admin** page or with
 `python3 app.py admin --help`.
 
+### Switch to public access with Funnel
+
+Funnel makes the sign-in page public at the app's existing HTTPS URL. For
+IRB-controlled projects, confirm the study protocol permits authenticated remote
+access before enabling Funnel. [Hosting guide](docs/hosting.md#what-this-protects-against-and-what-it-doesnt)
+
+Once the host has Funnel permission, run these commands from the account that
+runs the code-qda service.
+
+```sh
+systemctl --user start code-qda
+sudo tailscale funnel --bg --https=443 "unix:/run/user/$(id -u)/code-qda/http.sock"
+tailscale funnel status
+```
+
+Confirm that Funnel is enabled on port 443. Open the HTTPS URL from a device
+off the tailnet and verify that it shows the sign-in page and that signed-out
+project API requests return `401`. [Verification checklist](docs/hosting.md#verification-checklist)
+
+### Switch back to tailnet-only access
+
+To close public Funnel access, run these commands on the host from the account
+that runs the code-qda service.
+
+```sh
+sudo tailscale serve --bg --https=443 "unix:/run/user/$(id -u)/code-qda/http.sock"
+tailscale serve status
+```
+
+The status should show the app's HTTPS URL followed by `(tailnet only)`.
+
 ## Where the data lives
 
 Local mode uses the Git-ignored `md/` directory. Hosted projects use the
