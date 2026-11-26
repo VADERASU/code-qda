@@ -1,24 +1,24 @@
 # Code-QDA
 
-A small tool for coding interview transcripts: open a `.md` file in the browser,
-highlight text, and give it a code. It runs on Python's standard library and
-saves locally, with no account or package installation needed. To work with
-collaborators, host it for them with invite-only accounts; see
-[Hosting](#hosting-for-collaborators).
+A browser-based tool for qualitative coding of interview transcripts. Open a
+Markdown file, select a passage, and apply a code from a shared codebook. You
+can also check a timestamped transcript against its recording. The app runs on
+Python's standard library. Use it locally or host it with invite-only accounts.
+[Hosting for collaborators](#hosting-for-collaborators)
 
 ## Get started
 
-```
+```sh
 python3 app.py
 ```
 
-Open `http://localhost:8000` and choose a transcript. To add your own, put `.md`
-files in `md/` and refresh the page. For another port, use `python3 app.py 8001`.
-`make run` starts the same app; it never runs transcription.
+The app creates an `md/` directory on first start. Put your `.md` transcripts
+there, open [http://localhost:8000](http://localhost:8000), and select one
+under **Files**. Refresh the page after adding files.
 
-This local mode has no login, so it only answers on this computer
-(`localhost`). It also refuses any request that arrives through a proxy, so
-exposing it by mistake fails closed. `make test` runs the app's tests.
+`make run` is another way to start the app. To use port 8001, run
+`python3 app.py 8001` or `make run PORT=8001`. Local mode runs without accounts
+and accepts requests from this computer only.
 
 ## Coding transcripts
 
@@ -37,124 +37,128 @@ exposing it by mistake fails closed. `make test` runs the app's tests.
 - **Select any text** to get a popover and type a code name. Click a suggestion,
   or select one with the arrow keys and press Enter or **Apply**. An unambiguous,
   exact name is selected automatically. When no existing codes match, Enter or
-  **Apply** creates the typed code. Otherwise, choose **+ Create new code** to
-  create it; `Parent / Child` creates nested codes.
+  **Apply** creates the typed code. Otherwise, choose **+ Create new code**.
+  Use `Parent / Child` to create nested codes.
 - **Drag a code onto another** in the sidebar to nest it. Drop between codes
   to place it at that level, including promoting a subcategory between roots.
-  A blue line shows the insertion point. Children take their parent's color;
-  promoted codes keep their color, and top-level codes are recolorable.
-- **Click a code** in the sidebar to jump to its first instance; hover an
+  A blue line shows the insertion point. Child codes inherit their parent's
+  color. Promoted codes keep their color, and you can recolor any top-level code.
+- **Click a code** in the sidebar to jump to its first instance. Hover an
   instance and click **×** to remove it.
+- **Collapse all codes** beside the Codes heading closes the open branches.
+  Click the same button to expand them again.
 - **Edit codes** from either the overview or a transcript: hover a code and
   click **edit** to rename it, or click a root's color block to recolor it.
   **×** deletes a code and its children only when none are used in any transcript.
 - **Search codes** at the bottom of the sidebar to filter by name or path,
-  including unused codes. Both searches ignore separator differences: `sim to
-  real` finds `sim-to-real`, and `sim real` matches its words. Code-name matches
-  rank above ancestor matches in suggestions; small spelling mistakes are a
-  fallback when there are no literal matches. Press **Esc** to clear the search.
+  including unused codes. Both searches ignore separator differences. For
+  example, `sim to real` and `sim real` both find `sim-to-real`. Code-name matches
+  rank above ancestor matches in suggestions. If there are no literal matches,
+  suggestions can match small spelling mistakes. Press **Esc** to clear the search.
 - **Hover coded text** for a compact preview of its codes. **Click a code** in
   the preview to pin the card, reveal that coding's operations, and show its
   annotation instance in the codebook in the same click. Click another code
   to switch its operations and codebook entry. Clicking the transcript
   highlight also pins the card; choose a code when passages overlap.
   Point to a row (or focus its controls) to outline that code's full passage.
-  **⋯** offers moving,
-  adding a code to the same passage, and removing that coding with **Undo**.
+  Use **⋯** to move or remove a coding or add another code to the same passage.
+  Use **Undo** to restore a removed coding.
   **Esc**, the close button, or clicking outside closes the card. Keyboard
   users can Tab to a highlight and press Enter or Space to inspect it.
-- **Resize a coded span** with **Adjust span** in its annotation card, or **resize** beside
-  its sidebar entry. Drag the start or end handle, or select the replacement
-  text, then click **Save span**. The code and annotation ID stay the same;
-  overlapping annotations are unchanged. **Cancel** or **Esc** discards the
-  preview. Focus a handle and use Left/Right arrow keys for precise adjustments.
-- **The overview** (with no file open) aggregates code counts across every
-  transcript. Click a code to browse all its instances in context, and click a
-  card to jump to that passage.
+- **Resize a coded span** with **Adjust span** in its annotation card or
+  **resize** beside its sidebar entry. Drag either handle or select the
+  replacement text, then click **Save span**. **Cancel** or **Esc** discards
+  the preview. Focus a handle and use Left/Right arrow keys for precise
+  adjustments.
+- **The overview** shows code counts across the project. Open the project URL
+  without `?file=...` to see it. Click a code to browse its instances in
+  context, then click a card to jump to that passage.
 - **+ beside a code's edit button** adds a child beneath that code, at any
   nesting level. The **+** in the Codes heading adds a top-level code.
   Child codes inherit their parent's color. Codes appear even before they
   have annotations. **Prune**, available in the overview, clears out codes
   nothing uses.
 
-Everything saves automatically.
+Coding changes save automatically. The status below **Search codes** shows
+whether the save succeeded.
 
 ## Reviewing an existing transcript with matching audio
 
-You can use your local copy of a recording to review a shared transcript
-**without transcribing it again**. Pull the latest files, then put the recording
-in `bescribe/data/audio/` (create the directory if needed). Keep its original
-basename: `interview-01.m4a` matches `md/interview-01.tx.json`.
+For local review, put the saved `.tx.json` in `md/` and the matching recording
+in `bescribe/data/audio/` (create the directory if needed). Use the same
+basename for both files, such as `interview-01.m4a` and
+`md/interview-01.tx.json`.
 
-With that saved `.tx.json` transcript present, run from the repository root:
+From the repository root, run the command with your recording's path.
 
 ```bash
 make prepare AUDIO=bescribe/data/audio/interview-01.m4a
 ```
 
-Replace the example filename with yours. The command reuses the transcript,
-corrections, and review history, and prepares missing playback audio in
-`md/audio/` using ffmpeg. No GPU, model installation, or token is needed.
-Both audio directories stay out of git.
+The command reuses the saved transcript, including its corrections and review
+history. It restores any missing Markdown and uses ffmpeg to prepare missing
+playback audio in `md/audio/`. This path works without a GPU, model
+installation, or Hugging Face token.
 
 Start the app with `make run`, open the transcript, and click **Verify
 against audio**. The view highlights spoken words and flags likely errors.
 
-1. **Listen:** click **▶** beside a row to play that segment. Click a word to
+1. **Listen** by clicking **▶** beside a row. Click a word to
    start there, or press **Space** to pause or resume.
-2. **Correct:** double-click the text or click **edit**. Press **Enter** to
+2. **Correct text** by double-clicking it or clicking **edit**. Press **Enter** to
    save or **Esc** to cancel. Click a speaker name to change that segment's speaker.
-3. **Confirm:** click **✓** to mark the segment correct and play the next one
+3. **Confirm** with **✓** to mark the segment correct and play the next one
    in the selected group.
 
 **Needs review**, **Edited**, and **All** choose which segments **Previous** /
-**Next** visit; the full transcript stays visible. **Needs review (0)** means
+**Next** visit. The full transcript stays visible. **Needs review (0)** means
 there are no flagged segments awaiting review. Select **All** to continue
 checking the rest. **↑** / **↓** always move to the adjacent transcript row.
-Click **Back to coding** to return; saved changes are kept automatically.
+Click **Back to coding** to return to the transcript.
 
-Correct these transcripts in the app: it updates the `.tx.json`, regenerates
-the `.md`, and adjusts code annotations. Annotations on changed text need review.
+Make corrections in the app so it can update the `.tx.json`, regenerate the
+`.md`, and adjust code annotations. Recheck annotations on text you changed.
 
 [Full controls and details](docs/audio-verification.md).
 
 ### If the app says audio is missing
 
-The transcript is available, but its playback audio is missing on this computer.
-Text editing still works. Choose the option that matches the file you have:
+You can still edit the transcript. For playback, use the file you have.
 
-- **Original recording** (for example, `interview-01.m4a`): run the
-  `make prepare AUDIO=...` command above with that recording's path. Keep its
-  basename consistent with the saved transcript. With a matching `.tx.json`,
-  this only prepares playback audio; you do not need `make install` or a
-  Hugging Face token. You do need ffmpeg on your PATH.
-- **Prepared playback file** (for example, `interview-01.16k.opus`): copy it
-  into `md/audio/` using the exact filename shown in the app. If you started
-  the app with `QDA_AUDIO_DIR`, put the file in that directory instead.
+- For an **original recording** such as `interview-01.m4a`, run the
+  `make prepare AUDIO=...` command above with that recording's path.
+- For a **prepared playback file** such as `interview-01.16k.opus`, copy it
+  into `md/audio/` using the filename shown in the app. If you started the
+  app with `QDA_AUDIO_DIR`, use that directory. For a hosted project, the host
+  adds the file to the project's configured audio directory.
 
-Reopen **Verify against audio** after adding the file. Renaming an original
-recording to `.opus` does not convert it; use `make prepare` for that.
+Reopen **Verify against audio** after adding the file.
 
 [Transcribe new recordings](#transcribing-new-recordings).
 
 ## Hosting for collaborators
 
-`python3 app.py --hosted` serves the app to the internet through Tailscale
-Funnel.
+`python3 app.py --hosted` serves registered projects and requires sign-in.
+The hosting guide walks through configuring the server and publishing the app
+over HTTPS with Tailscale Funnel. [Hosting guide](docs/hosting.md)
 
 - **Accounts.** Accounts are invite-only. You send each person a one-time
   link, and they choose a password.
 - **Projects.** Each study is a separate project, and people see only the
   projects you add them to.
-- **Edit history.** Transcript edits record who made them.
+- **Edit history.** Transcript corrections record the signed-in person's
+  handle.
+- **Coding at the same time.** The server merges codebook edits by code.
+  If your save conflicts with someone else's annotation changes to the same
+  transcript, the app reloads it and asks you to redo your last change.
 
-[docs/hosting.md](docs/hosting.md) covers setup, administration
-(`python3 app.py admin …` or the admin page), and the security model.
+Manage accounts and projects from the **Admin** page or with
+`python3 app.py admin --help`.
 
 ## Where the data lives
 
-Transcript data is not in this repository: `md/` is gitignored. A project's
-files are:
+Local mode uses the Git-ignored `md/` directory. Hosted projects use the
+data and audio directories you register for each study.
 
 ```
 md/
@@ -162,66 +166,52 @@ md/
   interview-01.md
   interview-01.tx.json        ← transcript and review history, if present
   interview-01.annot.json     ← saved coding annotations
-  audio/                      ← playback audio (IRB-controlled; never in any repo)
+  audio/                      ← default local playback directory
 ```
 
-When hosted, the server's copy is the one everyone edits, so there is nothing
-to merge. For version history, make the data directory its own private git
-repository and commit from the server only. Moving the data between machines
-goes through approved storage.
-
-## Analysis report
-
-[`analysis/report.html`](analysis/report.html) contains findings and interactive
-coding charts for the current P1–P5 corpus: `ip1feb102026`,
-`ip2feb252026`, `ip3mar062026`, `ip4apr142026`, and
-`ip5laptop`. The charts mark transcripts without saved annotations as uncoded.
-The overlapping `ip5phone` backup is inventoried without counting P5 twice.
-The pilot's annotations are excluded from the primary comparison.
-Refresh the report's computed data after coding:
-
-```
-python3 analysis/build_report.py
-```
-
-This rebuilds the report and `analysis/data/summary.json` without changing
-`md/`. New cases are not included automatically. The curated findings in
-[`analysis/findings.json`](analysis/findings.json) have exact, timestamped
-excerpts checked against the current transcripts; this does not certify audio
-or speaker accuracy. The builder validates saved annotation ranges, code IDs,
-and quoted evidence. [`analysis/INSIGHTS.md`](analysis/INSIGHTS.md) contains the
-readable synthesis and coverage limits. Coding completeness is unconfirmed,
-and code counts or presence alone do not establish a research finding.
-
-The one-time transfer of all 330 annotations from `script1–3` is complete.
-[Migration details](analysis/migration.md) record the file mapping and audit
-trail; the retired scripts remain available in Git history.
+In hosted mode, everyone edits the server's copy. For Git history, use a
+separate private repository for project data and commit from the server. Move
+study data through approved storage and keep recordings and playback audio
+out of Git.
 
 ## Transcribing new recordings
 
-`make install` selects **MLX Whisper on Apple Silicon Macs** and **WhisperX
-on other platforms** (CUDA when available, CPU otherwise). Both produce the
-same transcript format. On Macs, word alignment and speaker diarization run
-on CPU; transcription uses the Apple GPU through MLX/Metal.
+The pipeline uses **MLX Whisper** on Apple Silicon with native arm64 Python
+and **WhisperX** elsewhere (CUDA when available, CPU otherwise). MLX uses the
+Apple GPU for transcription and runs alignment and speaker diarization on
+the CPU.
 
-If a recording has no saved transcript yet, follow the
-[pipeline setup](bescribe/README.md#setup) (`make install`, model access, and
-token). Put recordings in `bescribe/data/audio/`, then run from the repository
-root:
+For a new recording, the comparison stage needs
+`bescribe/pipeline/second_opinion.py` or a cached `.16k.parakeet.json` for that
+recording. The script is Git-ignored, so you need to supply it separately
+for a fresh run.
+
+Follow the pipeline setup to install the environments and configure model access
+and the Hugging Face token. Put recordings in `bescribe/data/audio/` and use a
+unique basename for each one. [Pipeline setup](bescribe/README.md#setup)
+
+From the repository root, load the token and prepare the recordings. By default,
+`make prepare` processes the `.m4a` files in `bescribe/data/audio/`. Use
+`make prepare AUDIO=path/to/recording.m4a` for one file.
 
 ```bash
-set -a; . bescribe/.env; set +a
+set -a
+. bescribe/.env
+set +a
 make prepare
 ```
 
-This transcribes new recordings, resumes unfinished work, and reuses finished
-transcripts. **`make prepare` runs the entire pipeline:** transcription, a second
-transcription for comparison, word timing refinement, transcript installation,
-and copying playback audio to the app. Progress messages describe work running
-automatically; you do not need to run the individual Python scripts or copy
-audio afterward. Wait for **Preparation complete**, then run `make run`.
+The pipeline transcribes new recordings, compares a second transcription,
+refines word timings, and installs the transcript and playback audio. It
+reuses completed stages and saved transcripts. When you see
+**Preparation complete**, run `make run`.
 
-Keep recording basenames unique and consistent across machines.
-`make list env` shows installed environments; `make help` lists commands.
+`make list env` shows installed environments. `make help` lists commands.
 `make list models` lists MLX Whisper sizes, the default, and examples for choosing
 one with `MLX_MODEL=... make prepare`.
+
+## Tests
+
+- Run `make test` for the standard-library test suite.
+- Run `make test-browser` for browser tests with headless Chromium. Set
+  `CHROME=/path/to/chromium` if the runner needs an explicit browser path.
