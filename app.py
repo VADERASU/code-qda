@@ -844,6 +844,24 @@ class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
     def _serve_index(self):
         self._serve_file(ROOT / "index.html", "text/html; charset=utf-8")
 
+    def _serve_offline_worker(self):
+        assets = sorted(p for p in STATIC_DIR.iterdir() if p.suffix in (".js", ".css"))
+        shell = ROOT / "index.html"
+        version = hashlib.sha256()
+        for path in [shell, *assets]:
+            version.update(path.name.encode())
+            version.update(path.read_bytes())
+        data = ("const CACHE = " + json.dumps("qda-shell-" + version.hexdigest()[:24])
+                + ";\nconst ASSETS = "
+                + json.dumps(["/offline-shell", *["/static/" + p.name for p in assets
+                                                   if p.name != "offline-worker.js"]])
+                + ";\n").encode() + (STATIC_DIR / "offline-worker.js").read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/javascript; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self._body_out(data)
+
     # --- project data -----------------------------------------------------
 
     def _name(self, params):
@@ -912,12 +930,21 @@ class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
             with self.project.lock:
                 if not self.project.codes_file.exists():
                     self._migrate_to_shared_codes()
-        af = self._annot_path(self.project.md_dir / name)
+        fp = self.project.md_dir / name
+        af = self._annot_path(fp)
         with self.project.lock:  # annotations and their rev must match
-            annotations = self._read_annotations(af)
-            rev = file_rev(af)
-        self._json({"version": 2, "codeTree": self._load_shared_tree(),
-                    "annotations": annotations, "rev": rev})
+            result = {"version": 2, "codeTree": self._load_shared_tree(),
+                      "annotations": self._read_annotations(af), "rev": file_rev(af)}
+            if params.get("text") == ["1"]:
+                try:
+                    raw = fp.read_bytes()
+                except FileNotFoundError:
+                    self._status(404)
+                    return
+                result.update(content=raw.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n"),
+                              textRev=hashlib.sha256(raw).hexdigest()[:32],
+                              owner=self.user["email"] if self.user else None)
+        self._json(result)
 
     def _get_codes_overview(self, params):
         counts = {}  # codeId -> count
@@ -938,10 +965,9 @@ class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
     def _save_codes(self, params):
         """Save one transcript's annotations (and fold in its code tree).
 
-        `rev` is the annotation file's version when the client loaded it. If
-        someone else saved since, the save is refused (409) instead of
-        silently replacing their work; the client reloads and the user redoes
-        their last change.
+        `rev` is the annotation file's version when the client loaded it. A
+        conflicting save is refused (409). Offline saves also check the text
+        version, and retries can confirm an earlier write.
         """
         fp = self._md_path(params)
         if fp is None:
@@ -951,7 +977,15 @@ class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
         af = self._annot_path(fp)
         current = file_rev(af)
         rev = data.get("rev")
-        if rev is not None and rev != current:
+        offline = "textRev" in data
+        if offline and (self.user is None or data.get("owner") != self.user["email"]):
+            self._status(403)
+            return
+        if offline and data["textRev"] != file_rev(fp):
+            self._json({"error": "The transcript text changed.", "rev": current}, status=409)
+            return
+        stale = rev is not None and rev != current
+        if stale and not offline:
             self._json({"error": "These codes were changed by someone else.",
                         "rev": current}, status=409)
             return
@@ -959,21 +993,43 @@ class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
         if annotations is None:
             self._json({"error": "Malformed annotations."}, status=400)
             return
+        previous = self._read_annotations(af)
+        shared = self._load_shared_tree()
+        merged = shared
         if "codeTree" in data:
             if not isinstance(data["codeTree"], list):
                 self._json({"error": "Malformed code tree."}, status=400)
                 return
-            shared = self._load_shared_tree()
+            if offline:
+                base = _clean_tree(data.get("codeTreeBase"))
+                server = _clean_tree(shared)
+                edited = _clean_tree(data["codeTree"])
+                if any(node != base.get(key) and server.get(key) not in (node, base.get(key))
+                       for key, node in edited.items()):
+                    self._json({"error": "The same code was changed by someone else.",
+                                "rev": current}, status=409)
+                    return
             merged = merge_code_trees(shared, data["codeTree"], data.get("codeTreeBase"),
                                       keep_ids={a["codeId"] for a in annotations})
-            if merged != shared:
-                write_json(self.project.codes_file, merged)
+        if stale:
+            # A retry whose acknowledgement was lost can confirm the earlier
+            # write without touching the project again.
+            if annotations == clean_annotations(previous) and merged == shared:
+                self._json({"ok": True, "rev": current, "annotations": previous, "codeTree": shared})
+            else:
+                self._json({"error": "These codes were changed by someone else.",
+                            "rev": current}, status=409)
+            return
+        if merged != shared:
+            write_json(self.project.codes_file, merged)
         author = self.user.get("handle") if self.user is not None else None
-        stamp_annotations(annotations, self._read_annotations(af), author, now_stamp())
+        stamp_annotations(annotations, previous, author, now_stamp())
         text = json.dumps(annotations, indent=2, ensure_ascii=False)
         txfmt.write_text_atomic(af, text)
-        self._json({"ok": True,
-                    "rev": hashlib.sha256(text.encode("utf-8")).hexdigest()[:32]})
+        result = {"ok": True, "rev": hashlib.sha256(text.encode("utf-8")).hexdigest()[:32]}
+        if offline:
+            result.update(annotations=annotations, codeTree=merged)
+        self._json(result)
 
     def _migrate_to_shared_codes(self):
         """One-time migration: merge codeTrees from all *.annot.json → codes.json."""

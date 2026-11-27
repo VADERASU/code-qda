@@ -370,9 +370,13 @@ copies, or the two will diverge. Audio stays out of every repository.
   codes created since, or undo someone else's renames, moves or deletions. A
   code that someone's codings use is never dropped.
 - If two people change the codings of the *same transcript* at the same time,
-  the second save is refused. That person's view reloads with a notice to
-  redo their last change, rather than silently overwriting the first person's
-  work.
+  the second save is refused. The view reloads with the server version and
+  offers the browser's saved draft for download.
+
+Opening a transcript saves its text, codebook, and
+annotations in the signed-in user's browser. Draft codings sync when the app
+can reach the server. Sign-out clears the saved copies on that browser.
+Recordings stream from the server during verification.
 
 ## What this protects against, and what it doesn't
 

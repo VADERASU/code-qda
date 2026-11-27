@@ -1,18 +1,13 @@
 // The signed-in bar at the top of the sidebar: who you are, which project
 // you are in (and a way to switch), and Sign out. Hosted mode only — local
 // mode has no accounts and shows nothing.
-import {BASE, sessionInfo, toSignIn} from './api.js';
+import {BASE} from './api.js';
+import {clearOfflineSession, hasPendingOfflineEdits} from './offline-store.js';
 import {esc} from './state.js';
 
-export async function initSession() {
+export function initSession(me) {
   const bar = document.getElementById('session-bar');
-  if (!bar) return;
-  const me = await sessionInfo();
-  if (me.mode !== 'hosted') return;
-  if (me.signedOut) {
-    toSignIn();
-    return;
-  }
+  if (!bar || me.mode !== 'hosted') return;
   const slug = BASE.replace(/^\/p\//, '');
   const projects = Array.isArray(me.projects) ? me.projects : [];
   const current = projects.find(project => project.slug === slug);
@@ -38,15 +33,20 @@ export async function initSession() {
   bar.querySelector('#session-project').addEventListener('change', event => {
     window.location.assign(`/p/${encodeURIComponent(event.target.value)}/`);
   });
-  bar.querySelector('#session-signout').addEventListener('click', async () => {
-    try {
-      await fetch('/auth/logout', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: '{}'
-      });
-    } finally {
-      window.location.assign('/login');
-    }
-  });
+  bar.querySelector('#session-signout').addEventListener('click', signOut);
+}
+
+export async function signOut() {
+  if (await hasPendingOfflineEdits().catch(() => false)
+      && !window.confirm('Signing out clears coding drafts saved on this device. Sign out?')) return;
+  await clearOfflineSession().catch(() => {});
+  try {
+    await fetch('/auth/logout', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: '{}'
+    });
+  } finally {
+    window.location.assign('/login');
+  }
 }

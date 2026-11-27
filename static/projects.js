@@ -1,6 +1,7 @@
 // The signed-in landing page: this account's projects and sandbox, creating
 // a project, and managing the members of the projects it owns.
 import {h} from './dom.js';
+import {signOut} from './session.js';
 
 let me = null;
 const openMembers = new Set();
@@ -83,18 +84,6 @@ function render() {
         h('span', {}, project.name), h('span', {class: 'project-arrow', 'aria-hidden': 'true'})));
     if (project.owned) item.append(membersPanel(project));
     list.append(item);
-  }
-}
-
-async function signOut() {
-  try {
-    await fetch('/auth/logout', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: '{}'
-    });
-  } finally {
-    window.location.assign('/login');
   }
 }
 

@@ -45,6 +45,8 @@
   <div id="sidebar-footer">
     <input id="code-search" type="search" placeholder="Search codes…" aria-label="Search existing codes" aria-controls="code-list" autocomplete="off" spellcheck="false">
     <div id="save-status" role="status"></div>
+    <button id="retry-coding" type="button" hidden>Retry sync</button>
+    <button id="download-coding-draft" type="button" hidden>Download draft</button>
   </div>
 </div>
 
@@ -55,6 +57,7 @@
   <div id="file-bar" hidden>
     <div id="file-bar-inner">
       <span id="file-bar-name"></span>
+      <span id="offline-status" role="status" hidden></span>
       <details id="reading-settings">
         <summary>Reading</summary>
         <div class="reading-panel">

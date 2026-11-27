@@ -93,6 +93,12 @@ class HostedMixin:
         app = self.server.app
         cmd = self.command
 
+        if cmd == "GET" and path == "/offline-worker.js":
+            self._serve_offline_worker()
+            return
+        if cmd == "GET" and path == "/offline-shell":
+            self._serve_index()
+            return
         if path.startswith("/static/"):
             if cmd == "GET":
                 self._try_serve_static(path)
@@ -283,7 +289,7 @@ class HostedMixin:
             auth.revoke_session(token_digest(old))
         token = auth.create_session(user["email"])
         auth.audit("login", email=user["email"], ip=self.client_ip())
-        self._json({"ok": True, "next": safe_next(body.get("next"))},
+        self._json({"ok": True, "email": user["email"], "next": safe_next(body.get("next"))},
                    headers=[self._session_cookie(token)])
 
     def _invite_info(self):
@@ -331,7 +337,7 @@ class HostedMixin:
             auth.revoke_session(token_digest(self._session_token()))
         token = auth.create_session(email)
         auth.audit("login", email=email, ip=self.client_ip(), via="invite")
-        self._json({"ok": True, "next": "/"}, headers=[self._session_cookie(token)])
+        self._json({"ok": True, "email": email, "next": "/"}, headers=[self._session_cookie(token)])
 
     def _logout(self):
         body = self._write_body(MAX_AUTH_BODY)

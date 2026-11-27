@@ -1,4 +1,5 @@
 // Sign-in and invite/reset pages. No inline script: the pages' CSP forbids it.
+import {clearOfflineForOtherAccount} from './offline-store.js';
 
 async function postJson(path, data) {
   const response = await fetch(path, {
@@ -31,6 +32,7 @@ function initLogin() {
         next
       });
       if (result.ok) {
+        await clearOfflineForOtherAccount(result.body.email).catch(() => {});
         window.location.assign(result.body.next || '/');
         return;
       }
@@ -98,6 +100,7 @@ async function initInvite() {
     try {
       const result = await postJson('/auth/invite/accept', {token, password: form.password.value});
       if (result.ok) {
+        await clearOfflineForOtherAccount(result.body.email).catch(() => {});
         window.location.assign('/');
         return;
       }

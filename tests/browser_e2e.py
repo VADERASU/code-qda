@@ -224,12 +224,15 @@ class E2E(unittest.TestCase):
         # (status, URL suffix) of refusals a test provokes on purpose; the
         # browser logs those as errors, and nothing else may appear.
         self.expected = set()
+        self.expected_disconnections = set()
 
     def tearDown(self):
         def provoked(p):
             return (p[0] == "log" and p[1] == "network"
-                    and any(f"status of {code}" in p[2] and p[3].endswith(url)
-                            for code, url in self.expected))
+                    and (any(f"status of {code}" in p[2] and p[3].endswith(url)
+                             for code, url in self.expected)
+                         or "net::ERR_INTERNET_DISCONNECTED" in p[2]
+                         and any(p[3].endswith(url) for url in self.expected_disconnections)))
         problems = [p for p in self.browser.problems if not provoked(p)]
         self.assertEqual(problems, [], "console errors / CSP violations")
 
@@ -333,6 +336,8 @@ class E2E(unittest.TestCase):
         b.js("document.getElementById('session-signout').click()")
         b.wait_for("location.pathname === '/login'")
         self.assertEqual(b.js("fetch('/p/alpha/api/files').then(r => r.status)"), 401)
+        self.assertTrue(b.js("""import('/static/offline-store.js')
+            .then(module => module.offlineSession()).then(session => session === undefined)"""))
 
     def test_two_people_editing(self):
         """The real save path: this tab's saves keep another person's codebook
@@ -387,11 +392,101 @@ class E2E(unittest.TestCase):
         rename("Tools v2", "Tools v3")
         b.wait_for("document.getElementById('save-status').textContent.includes('someone else')")
         b.wait_for("document.querySelectorAll('#text-display .coded').length === 0")  # hers now
+        self.assertTrue(b.js("!document.getElementById('download-coding-draft').hidden"))
         self.assertEqual(names()["code-root1"], "Tools v2")  # the refused save changed nothing
         rename("Tools v2", "Tools v3")  # redoing it works
         b.wait_for("document.getElementById('save-status').textContent === 'saved'")
         self.assertEqual(names()["code-root1"], "Tools v3")
         self.assertEqual(json.loads((env["alpha"].md_dir / "one.annot.json").read_text()), [])
+
+    def test_offline_coding_survives_reload_and_syncs(self):
+        b = self.browser
+        env = support.hosted_setup(self)
+        port = env["server"].port
+        origin = f"http://localhost:{port}"
+        env["app"].public_origin = origin
+        env["app"].allowed_hosts = frozenset({f"localhost:{port}"})
+        target = "/p/alpha/?file=one.md"
+        b.go(f"{origin}/login?next=" + urllib.parse.quote(target))
+        b.js(f"""(() => {{ const f = document.getElementById('login-form');
+            f.email.value = 'carol@example.edu';
+            f.password.value = {json.dumps(env['passwords']['carol@example.edu'])};
+            f.requestSubmit(); }})()""")
+        offline_label = "document.getElementById('offline-status')"
+        b.wait_for("location.pathname === '/p/alpha/' && document.getElementById('offline-status') !== null")
+        b.wait_for(f"!{offline_label}.hidden && {offline_label}.textContent === 'Available offline'")
+        self.assertTrue(b.js("""caches.keys().then(keys => caches.open(keys.find(k => k.startsWith('qda-shell-'))))
+            .then(cache => cache.keys()).then(entries => entries.every(entry =>
+                ['/offline-shell', '/static/'].some(prefix => new URL(entry.url).pathname.startsWith(prefix))))"""))
+
+        def connect(online):
+            b.call("Network.emulateNetworkConditions", offline=not online, latency=0,
+                   downloadThroughput=-1, uploadThroughput=-1)
+
+        self.addCleanup(connect, True)
+        self.expected_disconnections.update(("/auth/me", "/p/alpha/api/files",
+                                             "/p/alpha/api/codes?name=one.md",
+                                             "/p/alpha/api/codes?name=one.md&text=1"))
+        connect(False)
+        b.wait_for(f"{offline_label}.textContent === 'Offline'")
+        self.assertTrue(b.js("document.getElementById('verify-btn').disabled"))
+        b.js("""(() => {
+            document.querySelector('button[aria-label="Rename Tools"]').click();
+            const input = document.querySelector('.code-rename-input');
+            input.value = 'Renamed on the plane';
+            input.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+        })()""")
+        b.wait_for("document.getElementById('save-status').textContent.startsWith('Saved on this device')")
+        b.js("""(() => {
+            const display = document.querySelector('#text-display');
+            const nodes = document.createTreeWalker(display, NodeFilter.SHOW_TEXT);
+            const phrase = 'Tell me more about that.';
+            let node;
+            while ((node = nodes.nextNode()) && !node.textContent.includes(phrase)) {}
+            const start = node.textContent.indexOf(phrase);
+            const range = document.createRange();
+            range.setStart(node, start);
+            range.setEnd(node, start + phrase.length);
+            window.getSelection().removeAllRanges();
+            window.getSelection().addRange(range);
+            display.dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+        })()""")
+        b.wait_for("!document.getElementById('popover').hidden")
+        b.js("""(() => {
+            const input = document.getElementById('code-input');
+            input.value = 'Renamed on the plane';
+            input.dispatchEvent(new Event('input', {bubbles: true}));
+            document.getElementById('code-save').click();
+        })()""")
+        b.wait_for("document.querySelectorAll('#text-display .coded').length === 2")
+        b.wait_for("document.getElementById('save-status').textContent.startsWith('Saved on this device')")
+        codes_path = env["alpha"].md_dir / "codes.json"
+        annotations_path = env["alpha"].md_dir / "one.annot.json"
+        self.assertEqual(json.loads(codes_path.read_text())[0]["name"], "Tools")
+        self.assertEqual(len(json.loads(annotations_path.read_text())), 1)
+        b.call("Page.reload")
+        b.drain(0.5)
+        b.wait_for("document.querySelector('#code-list')?.textContent.includes('Renamed on the plane')")
+        b.wait_for(f"!{offline_label}.hidden && {offline_label}.textContent === 'Offline'")
+        self.assertIn("Tell me more about that.", b.js("[...document.querySelectorAll('#text-display .coded')].map(e => e.textContent)"))
+
+        connect(True)
+        b.wait_for("document.getElementById('save-status').textContent === 'saved'")
+        self.assertEqual(json.loads(codes_path.read_text())[0]["name"], "Renamed on the plane")
+        self.assertEqual(len(json.loads(annotations_path.read_text())), 2)
+
+        # Replacing an expired session with a different account clears the
+        # previous user's offline data, even before opening a project.
+        b.go("about:blank", settle=0.2)
+        b.call("Network.clearBrowserCookies")
+        b.go(f"{origin}/login")
+        b.js(f"""(() => {{ const f = document.getElementById('login-form');
+            f.email.value = 'bob@example.edu';
+            f.password.value = {json.dumps(env['passwords']['bob@example.edu'])};
+            f.requestSubmit(); }})()""")
+        b.wait_for("location.pathname === '/'")
+        self.assertTrue(b.js("""import('/static/offline-store.js')
+            .then(module => module.offlineSession()).then(session => session === undefined)"""))
 
     def test_invite_and_admin_pages(self):
         b = self.browser

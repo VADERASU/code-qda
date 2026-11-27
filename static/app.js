@@ -1,6 +1,8 @@
-import {apiFetch, apiPost} from './api.js';
+import {BASE, apiFetch, apiPost, requestSession, toSignIn} from './api.js';
 import {initReading} from './reading.js';
 import {initSession} from './session.js';
+import {canUseCachedCoding, createOfflineCoding} from './offline-coding.js';
+import {offlineSession, rememberSession} from './offline-store.js';
 import {initUpload} from './upload.js';
 import {initRecordings, loadRecordings} from './recordings.js';
 import {toTop} from './place.js';
@@ -64,9 +66,17 @@ const sidebarHandlers = {
 const transcriptFiles = new Set();
 const availableFiles = new Set();
 let fileLoad = 0;
+let offlineCoding;
+let loadedCoding;
+let shellReady = false;
+let disconnected = false;
+let loadingFile = false;
 
 const fileBar = document.getElementById('file-bar');
 const fileBarName = document.getElementById('file-bar-name');
+const offlineStatus = document.getElementById('offline-status');
+const retryCoding = document.getElementById('retry-coding');
+const downloadDraft = document.getElementById('download-coding-draft');
 const verifyButton = document.getElementById('verify-btn');
 const textDisplay = document.getElementById('text-display');
 const verifyView = document.getElementById('verify-view');
@@ -116,7 +126,7 @@ function resumeCoding() {
 }
 
 verifyButton.onclick = async () => {
-  if (!state.currentFile || isVerifying()) {
+  if (!state.currentFile || verifyButton.disabled || isVerifying()) {
     return;
   }
   cancelAnnotationResize();
@@ -185,11 +195,45 @@ function noteTranscripts(files) {
 }
 
 async function loadFiles() {
-  renderFiles(noteTranscripts(await apiFetch('/api/files')), loadFile);
+  displayFiles(await projectFiles());
+}
+
+function displayFiles(files) {
+  renderFiles(noteTranscripts(files), name => loadFile(name).catch(reportLoadError));
+  verifyButton.hidden = !transcriptFiles.has(state.currentFile);
+}
+
+async function projectFiles() {
+  try {
+    if (offlineCoding && !navigator.onLine) throw new TypeError('Offline');
+    const files = await apiFetch('/api/files', offlineCoding ? {signal: AbortSignal.timeout(8000)} : undefined);
+    if (offlineCoding) setCodingConnection(true);
+    return files;
+  } catch (error) {
+    if (!offlineCoding || !canUseCachedCoding(error)) throw error;
+    setCodingConnection(false);
+    return (await offlineCoding.list()).filter(record => record.snapshot).map(record => ({name: record.name}));
+  }
+}
+
+function reportLoadError(error) {
+  if (error.status === 401) {
+    toSignIn();
+    return;
+  }
+  showSaveStatus(disconnected ? 'This transcript is unavailable offline' : 'could not load transcript', true, true);
 }
 
 async function loadOverview() {
-  const overviewData = await apiFetch('/api/codes-overview');
+  if (disconnected) return;
+  let overviewData;
+  try {
+    overviewData = await apiFetch('/api/codes-overview', offlineCoding ? {signal: AbortSignal.timeout(8000)} : undefined);
+  } catch (error) {
+    if (!offlineCoding || !canUseCachedCoding(error)) throw error;
+    setCodingConnection(false);
+    return;
+  }
   const rawCodes = Array.isArray(overviewData?.codes) ? overviewData.codes : [];
   state.overviewCountsById = new Map(
     rawCodes.filter(code => code.id && Number.isFinite(code.count)).map(code => [code.id, code.count])
@@ -214,37 +258,68 @@ async function loadFile(name, {resume = true, updateUrl = true} = {}) {
   }
   const request = ++fileLoad;
   const previous = state.currentFile;
+  await loadedCoding?.writes;
+  if (request !== fileLoad) return;
   // Stop playback and invalidate pending verification requests immediately.
   // This navigation owns the next render; an exit callback would reload again.
   closeVerify({keepPlace: false, notify: false});
+  loadingFile = true;
   verifyButton.disabled = true;
-  state.currentFile = name;
-  state.currentOverviewCode = null;
-
-  const [fileData, codesData, files] = await Promise.all([
-    apiFetch(`/api/file?name=${encodeURIComponent(name)}`),
-    apiFetch(`/api/codes?name=${encodeURIComponent(name)}`),
-    apiFetch('/api/files')
-  ]);
+  let fileData, codesData, files, offline;
+  try {
+    if (offlineCoding) {
+      [offline, files] = await Promise.all([offlineCoding.open(name), projectFiles()]);
+      const {snapshot, pending} = offline.record;
+      fileData = {content: pending?.content ?? snapshot.content};
+      codesData = pending ? {...snapshot, rev: pending.rev,
+        codeTree: pending.latest.codeTree, annotations: pending.latest.annotations} : snapshot;
+    } else {
+      [fileData, codesData, files] = await Promise.all([
+        apiFetch(`/api/file?name=${encodeURIComponent(name)}`),
+        apiFetch(`/api/codes?name=${encodeURIComponent(name)}`),
+        projectFiles()
+      ]);
+    }
+  } catch (error) {
+    if (request !== fileLoad) return;
+    loadingFile = false;
+    refreshOfflineControls();
+    throw error;
+  }
   if (request !== fileLoad) return;
 
+  loadingFile = false;
+  state.currentFile = name;
+  state.currentOverviewCode = null;
   state.rawText = fileData.content;
   if (typeof codesData?.rev === 'string') codeRevs.set(name, codesData.rev);
   codeLoads.set(name, (codeLoads.get(name) || 0) + 1);
   const normalized = normalizeCodesData(codesData);
   state.annotations = normalized.annotations;
   state.codeTree = normalized.codeTree;
-  syncedCodeTree = structuredClone(normalized.codeTree);
+  syncedCodeTree = offline?.record.pending?.codeTreeBase ?? structuredClone(normalized.codeTree);
   treeLoads += 1;
   state.collapsed = new Set([...state.collapsed].filter(codeId => getCodeById(codeId)));
 
-  renderFiles(noteTranscripts(files), loadFile);
+  loadedCoding = offline && {
+    name,
+    cached: offline.cached !== false,
+    version: offline.record.pending?.latest.version ?? null,
+    latest: offline.record.pending?.latest.version,
+    textRev: offline.record.pending?.textRev ?? offline.record.snapshot.textRev,
+    recovery: Boolean(offline.record.recovery)
+  };
+  if (offline?.offline) setCodingConnection(false);
+  displayFiles(files);
   showMainContent();
   textDisplay.hidden = false;
   fileBar.hidden = false;
   fileBarName.textContent = name;
-  verifyButton.hidden = !transcriptFiles.has(name);
-  verifyButton.disabled = false;
+  refreshOfflineControls();
+  retryCoding.hidden = !offline?.record.pending;
+  if (offline?.record.pending) showSaveStatus('Saved on this device · waiting to sync', false, true);
+  else if (loadedCoding?.recovery) showSaveStatus('A coding draft needs review', true, true);
+  else showSaveStatus('');
   renderText();
   renderSidebar(sidebarHandlers);
   if (updateUrl || requestedName !== name) {
@@ -273,8 +348,9 @@ async function restoreFromUrl() {
     } catch (error) {
       // A newer selection may have completed while this request failed.
       if (request !== fileLoad) return;
+      if (error.status === 401) return reportLoadError(error);
       await showFileOverview();
-      showSaveStatus(`could not load ${name}`, true);
+      reportLoadError(error);
     }
   } else {
     await showFileOverview();
@@ -292,6 +368,11 @@ async function showFileOverview() {
   state.rawText = '';
   state.annotations = [];
   state.codeTree = [];
+  loadingFile = false;
+  loadedCoding = null;
+  retryCoding.hidden = true;
+  refreshOfflineControls();
+  showSaveStatus('');
   textDisplay.hidden = false;
   fileBar.hidden = true;
   clearOverview();
@@ -309,8 +390,20 @@ window.addEventListener('popstate', restoreFromUrl);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     loadFiles().catch(() => {});
-    loadRecordings();
+    if (!disconnected) loadRecordings();
+    offlineCoding?.sync();
   }
+});
+
+window.addEventListener('offline', () => {
+  if (!offlineCoding) return;
+  setCodingConnection(false);
+  loadFiles().catch(() => {});
+});
+window.addEventListener('online', () => {
+  if (!offlineCoding) return;
+  loadFiles().catch(() => {});
+  offlineCoding.sync();
 });
 
 async function onOverviewInstanceClick(instance) {
@@ -823,6 +916,109 @@ let treeLoads = 0;
 
 class SaveConflict extends Error {}
 
+function refreshOfflineControls() {
+  const available = Boolean(shellReady && loadedCoding?.cached);
+  offlineStatus.hidden = !available;
+  offlineStatus.textContent = disconnected ? 'Offline' : 'Available offline';
+  downloadDraft.hidden = !loadedCoding?.recovery;
+  verifyButton.disabled = disconnected || loadingFile;
+  verifyButton.title = disconnected ? 'Connect to verify against audio' : 'Check the transcript against the audio';
+}
+
+function setCodingConnection(connected) {
+  disconnected = !connected;
+  refreshOfflineControls();
+}
+
+async function onCodingSync(name, {type, record, attempt, error}) {
+  const current = loadedCoding;
+  if (type === 'waiting') setCodingConnection(false);
+  if (type === 'saved') {
+    setCodingConnection(true);
+    if (current?.name === name && (current.version === attempt.version
+        || current.version === record.pending?.latest.version)) {
+      codeRevs.set(name, record.snapshot.rev);
+      syncedCodeTree = attempt.codeTree;
+      if (!record.pending && current.latest === attempt.version) {
+        retryCoding.hidden = true;
+        showSaveStatus('saved', false, true);
+      }
+    }
+    loadOverview().catch(() => {});
+    loadFiles().catch(() => {});
+    return;
+  }
+  if (current?.name !== name) return;
+  if (type === 'conflict') {
+    const offset = readingOffset();
+    if (offset != null) placeToRestore = [offset, offset];
+    try {
+      await loadFile(name, {resume: false, updateUrl: false});
+      if (state.currentFile === name) {
+        showSaveStatus('Changed by someone else or corrected · draft saved on this device', true, true);
+      }
+    } catch (loadError) {
+      current.recovery = true;
+      refreshOfflineControls();
+      reportLoadError(loadError);
+    }
+    return;
+  }
+  retryCoding.hidden = false;
+  const message = type === 'waiting' ? 'Saved on this device · waiting to sync'
+    : error.status === 401 ? 'Saved on this device · sign in to sync'
+    : 'Saved on this device · sync failed';
+  showSaveStatus(message, type === 'error', true);
+}
+
+function queueCodingDraft(coding, base, latest) {
+  coding.latest = latest.version;
+  showSaveStatus('Saving to this device…', false, true);
+  coding.writes = (coding.writes || Promise.resolve()).then(async () => {
+    const result = await offlineCoding.queue(coding.name, base, coding.version, latest);
+    if (!result.collision) coding.version = latest.version;
+    coding.unsaved = null;
+    coding.recovery ||= result.recovery;
+    if (loadedCoding !== coding || coding.latest !== latest.version) return;
+    refreshOfflineControls();
+    retryCoding.hidden = result.collision;
+    showSaveStatus(result.collision ? 'Another tab has pending edits · draft saved for review'
+      : 'Saved on this device · waiting to sync', result.collision, true);
+  }).catch(() => {
+    coding.unsaved = {base, latest};
+    if (loadedCoding !== coding || coding.latest !== latest.version) return;
+    retryCoding.hidden = false;
+    showSaveStatus('Could not save on this device · keep this tab open and retry', true, true);
+  });
+  return coding.writes;
+}
+
+retryCoding.onclick = () => {
+  if (loadedCoding?.unsaved) {
+    const {base, latest} = loadedCoding.unsaved;
+    queueCodingDraft(loadedCoding, base, latest);
+  } else {
+    offlineCoding?.sync(true);
+  }
+};
+
+downloadDraft.onclick = async () => {
+  const name = loadedCoding?.name;
+  if (!name) return;
+  try {
+    const {recovery} = await offlineCoding.read(name);
+    const url = URL.createObjectURL(new Blob([JSON.stringify({transcript: name, drafts: recovery}, null, 2)],
+      {type: 'application/json'}));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${name}.coding-drafts.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch {
+    showSaveStatus('Could not open the saved draft', true, true);
+  }
+};
+
 async function saveCodes() {
   if (!state.currentFile) {
     return;
@@ -837,6 +1033,13 @@ async function saveCodes() {
     annotations: state.annotations,
     ...(syncedCodeTree ? {codeTreeBase: syncedCodeTree} : {})
   });
+  if (loadedCoding?.cached) {
+    const {codeTree, annotations} = payload;
+    const base = {content: state.rawText, textRev: loadedCoding.textRev,
+      rev: codeRevs.get(file), codeTreeBase: payload.codeTreeBase};
+    await queueCodingDraft(loadedCoding, base, {version: uid(), codeTree, annotations});
+    return;
+  }
   const loaded = codeLoads.get(file);
   const treeLoaded = treeLoads;
   const request = codeSaveQueue.then(async () => {
@@ -944,7 +1147,7 @@ async function pruneEmptyCodes() {
 }
 
 async function init() {
-  initSession();
+  if (!await setupCodingSession()) return;
   initRecordings({
     openFile: name => loadFile(name),
     onDone: async jobs => {
@@ -961,7 +1164,7 @@ async function init() {
     const transcripts = added.filter(item => item.kind === 'transcript');
     if (transcripts.length === 1) await loadFile(transcripts[0].name);
   }});
-  loadRecordings();
+  if (!disconnected) loadRecordings();
   const results = await Promise.allSettled([loadFiles(), loadOverview()]);
   if (results.some(result => result.status === 'rejected')) {
     showSaveStatus('load failed', true);
@@ -970,6 +1173,49 @@ async function init() {
   if (fileLoad === 0 && new URL(window.location.href).searchParams.get('file')) {
     await restoreFromUrl();
   }
+  offlineCoding?.sync();
+}
+
+async function setupCodingSession() {
+  let me;
+  try {
+    if (!navigator.onLine) throw new TypeError('Offline');
+    me = await requestSession();
+  } catch {
+    me = await offlineSession().catch(() => undefined);
+    disconnected = Boolean(me);
+  }
+  if (!BASE) {
+    if (disconnected && me.lastProject) {
+      window.location.replace(`/p/${encodeURIComponent(me.lastProject)}/`);
+      return false;
+    }
+    return true;
+  }
+  if (me?.signedOut) {
+    toSignIn();
+    return false;
+  }
+  const project = BASE.slice('/p/'.length);
+  if (!me?.projects?.some(entry => entry.slug === project)) {
+    if (!me) showSaveStatus('Connect to open this project on this device', true, true);
+    return !me;
+  }
+  initSession(me);
+  if (!('serviceWorker' in navigator)) return true;
+  try {
+    if (!disconnected) await rememberSession(me, project);
+    offlineCoding = createOfflineCoding(me.email, project, onCodingSync);
+    if (!disconnected) navigator.serviceWorker.register('/offline-worker.js').catch(() => {});
+    navigator.serviceWorker.ready.then(() => {
+      shellReady = true;
+      refreshOfflineControls();
+    });
+  } catch {
+    // The normal online editor is still available if the browser blocks storage.
+    offlineCoding = undefined;
+  }
+  return true;
 }
 
 init();

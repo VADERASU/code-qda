@@ -1462,10 +1462,11 @@ export function hideColorPicker() {
   dom.colorPicker.hidden = true;
 }
 
-export function showSaveStatus(message, error = false) {
+export function showSaveStatus(message, error = false, persistent = false) {
   dom.saveStatus.textContent = message;
   dom.saveStatus.className = error ? 'error' : '';
   clearTimeout(dom.saveStatus._timer);
+  if (persistent) return;
   dom.saveStatus._timer = setTimeout(() => {
     dom.saveStatus.textContent = '';
     dom.saveStatus.className = '';

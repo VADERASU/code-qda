@@ -91,6 +91,12 @@ and accepts requests from this computer only.
 Coding changes save automatically. The status below **Search codes** shows
 whether the save succeeded.
 
+In hosted mode, opening a transcript while connected automatically saves its
+text, codes, and annotations in this browser. **Available offline** means you
+can reopen the transcript on the same device and keep coding. Offline edits
+save to the device and sync when the app can reach the server again. Audio
+verification needs a connection. Signing out clears the local copies.
+
 ## Reviewing an existing transcript with matching audio
 
 For local review, put the saved `.tx.json` in `md/` and the matching recording
@@ -168,7 +174,7 @@ over HTTPS with Tailscale Funnel. [Hosting guide](docs/hosting.md)
   person's handle and the time.
 - **Coding at the same time.** The server merges codebook edits by code.
   If your save conflicts with someone else's annotation changes to the same
-  transcript, the app reloads it and asks you to redo your last change.
+  transcript, the app reloads it and offers your saved draft for download.
 
 Manage accounts and projects from the **Admin** page or with
 `python3 app.py admin --help`.

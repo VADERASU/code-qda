@@ -18,11 +18,13 @@ export function toSignIn() {
   return new Promise(() => {});
 }
 
-export async function apiFetch(path) {
-  const response = await fetch(apiUrl(path));
+export async function apiFetch(path, options) {
+  const response = await fetch(apiUrl(path), options);
   if (response.status === 401) return toSignIn();
   if (!response.ok) {
-    throw new Error(response.status);
+    const error = new Error(response.status);
+    error.status = response.status;
+    throw error;
   }
   return response.json();
 }
@@ -42,11 +44,16 @@ export async function apiPost(path, data = {}) {
 
 export async function sessionInfo() {
   try {
-    const response = await fetch('/auth/me');
-    if (response.status === 401) return {mode: 'hosted', signedOut: true};
-    if (!response.ok) return {mode: 'local'};
-    return await response.json();
+    return await requestSession();
   } catch {
     return {mode: 'local'};
   }
+}
+
+export async function requestSession() {
+  const response = await fetch('/auth/me', {signal: AbortSignal.timeout(8000)});
+  if (response.status === 401) return {mode: 'hosted', signedOut: true};
+  if (response.status >= 500) throw new Error(response.status);
+  if (!response.ok) return {mode: 'local'};
+  return response.json();
 }

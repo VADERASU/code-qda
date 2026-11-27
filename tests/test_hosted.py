@@ -195,6 +195,23 @@ class Isolation(unittest.TestCase):
         self.assertEqual((resp.status, len(resp.body)), (206, 100))
         self.assertEqual(resp.header("Cache-Control"), "no-store")
 
+    def test_offline_save_checks_account_and_text_and_accepts_a_retry(self):
+        carol = signed_in(self.env, "carol@example.edu")
+        path = "/p/alpha/api/codes?name=one.md"
+        snapshot = carol.get(path + "&text=1").json()
+        self.assertIn("simulator", snapshot["content"])
+        payload = {key: snapshot[key] for key in ("owner", "textRev", "rev", "codeTree")}
+        payload.update(codeTreeBase=snapshot["codeTree"], annotations=[])
+        self.assertEqual(carol.post(path, {**payload, "owner": "alice@example.edu"}).status, 403)
+        saved = carol.post(path, payload)
+        self.assertEqual(saved.status, 200)
+        self.assertEqual(carol.post(path, payload).json(), saved.json())
+
+        resp = carol.post("/p/alpha/api/tx-edit?name=one.md",
+                          {"seg": "s0002", "text": "A corrected sentence."})
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(carol.post(path, payload).status, 409)
+
 
 class Admin(unittest.TestCase):
     def setUp(self):

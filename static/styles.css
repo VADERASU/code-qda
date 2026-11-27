@@ -212,6 +212,7 @@ body {
 }
 #save-status:empty { display: none; }
 #save-status.error { color: #d33; }
+#retry-coding, #download-coding-draft { margin-top: 5px; font: inherit; font-size: 11px; }
 .code-search-empty { color: #888; font-size: 12px; padding: 4px 0; }
 .code-name mark { background: #fff1b8; color: inherit; border-radius: 2px; }
 
@@ -841,6 +842,7 @@ body:has(#main[data-reading-theme="dark"] #file-bar:not([hidden])) .annotation-s
   position: relative;
 }
 #file-bar-name { flex: 1; min-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#offline-status { color: var(--reading-fg); font-size: 11px; }
 #verify-btn {
   border: 1px solid var(--reading-border);
   background: var(--reading-control);
