@@ -4,7 +4,7 @@
     "name": "Tools",
     "parentId": null,
     "order": 0,
-    "color": "#1a73e8"
+    "color": "#1f78b4"
   },
   {
     "id": "starter-spreadsheet",
@@ -25,34 +25,34 @@
     "name": "Manual steps",
     "parentId": null,
     "order": 1,
-    "color": "#e37400"
+    "color": "#ff7f00"
   },
   {
     "id": "starter-loss",
     "name": "Data loss",
     "parentId": null,
     "order": 2,
-    "color": "#d93025"
+    "color": "#e31a1c"
   },
   {
     "id": "starter-workaround",
     "name": "Workarounds",
     "parentId": null,
     "order": 3,
-    "color": "#188038"
+    "color": "#b2df8a"
   },
   {
     "id": "starter-collab",
     "name": "Collaboration",
     "parentId": null,
     "order": 4,
-    "color": "#9334e6"
+    "color": "#6a3d9a"
   },
   {
     "id": "starter-wish",
     "name": "Wish list",
     "parentId": null,
     "order": 5,
-    "color": "#00897b"
+    "color": "#33a02c"
   }
 ]

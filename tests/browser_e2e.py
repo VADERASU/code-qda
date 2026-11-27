@@ -475,6 +475,25 @@ class E2E(unittest.TestCase):
         b.wait_for("document.querySelectorAll('#text-display .coded').length >= 5")
         b.wait_for("!!document.querySelector('#session-bar .session-note')")
         self.assertIn("Tools", b.js("document.getElementById('code-list').textContent"))
+        color_usage = b.js("""(() => {
+            const roots = [...document.querySelectorAll('#code-list .code-swatch[title="Change color"]')];
+            const tools = document.querySelector('[data-code-id="starter-tools"] > .code-label .code-swatch');
+            tools.click();
+            const active = document.querySelector('#cp-grid .cp-color.active');
+            const badges = [...document.querySelectorAll('#cp-grid .cp-badge')];
+            return {
+                roots: roots.length,
+                selected: active?.style.backgroundColor === tools.style.backgroundColor,
+                counts: badges.map(badge => Number(badge.textContent)),
+                countedColors: badges.map(badge => badge.parentElement.style.backgroundColor).sort(),
+                otherColors: roots.filter(swatch => swatch !== tools).map(swatch => swatch.style.backgroundColor).sort()
+            };
+        })()""")
+        self.assertEqual(color_usage["roots"], 6)
+        self.assertTrue(color_usage["selected"])
+        self.assertEqual(color_usage["counts"], [1] * 5)
+        self.assertEqual(color_usage["countedColors"], color_usage["otherColors"])
+        b.js("document.body.click()")
 
         # Upload through the real file picker.
         upload_dir = support.temp_dir(self)

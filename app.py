@@ -38,7 +38,7 @@ from pathlib import Path
 
 import txfmt
 from qda_hosted import HostedMixin
-from qda_projects import Project, local_project
+from qda_projects import SANDBOX, Project, local_project, normalize_starter_colors
 
 ROOT = Path(__file__).resolve().parent
 MD_DIR = ROOT / "md"
@@ -1489,9 +1489,13 @@ class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
             return []
         try:
             data = json.loads(self.project.codes_file.read_text(encoding="utf-8"))
-            return data if isinstance(data, list) else []
         except (OSError, ValueError):
             return []
+        if not isinstance(data, list):
+            return []
+        if self.project.slug == SANDBOX:
+            normalize_starter_colors(data)
+        return data
 
     def _used_code_ids(self, nodes):
         """Every code used by an annotation, plus all of its ancestors."""

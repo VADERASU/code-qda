@@ -75,6 +75,29 @@ class Sandbox(unittest.TestCase):
         self.assertIn("four plots", alice.get("/p/sandbox/api/file?name=practice-interview.md").json()["content"])
         self.assertEqual({p.name: p.read_bytes() for p in STARTER_DIR.iterdir()}, self.starter)
 
+    def test_existing_sandbox_maps_original_starter_colors(self):
+        bob = signed_in(self.env, BOB)
+        project = self.env["registry"].sandbox(BOB, "bob")
+        tree = json.loads(project.codes_file.read_text())
+        nodes = {node["id"]: node for node in tree}
+        nodes["starter-tools"]["color"] = "#1a73e8"
+        nodes["starter-loss"]["color"] = "#d93025"
+        nodes["starter-wish"]["color"] = "#b15928"  # Recolored by the user.
+        tree.append({"id": "custom", "name": "Custom", "parentId": None,
+                     "color": "#1a73e8", "order": 6})
+        project.codes_file.write_text(json.dumps(tree))
+
+        for endpoint in ("codes?name=practice-interview.md", "codes-overview"):
+            with self.subTest(endpoint=endpoint):
+                response = bob.get(f"/p/sandbox/api/{endpoint}")
+                self.assertEqual(response.status, 200)
+                colors = {node["id"]: node.get("color") for node in response.json()["codeTree"]}
+                self.assertEqual(colors["starter-tools"], "#1f78b4")
+                self.assertEqual(colors["starter-loss"], "#e31a1c")
+                self.assertEqual(colors["starter-wish"], "#b15928")
+                self.assertEqual(colors["custom"], "#1a73e8")
+                self.assertIsNone(colors["starter-notebook"])
+
     def test_listed_last_for_everyone_and_reserved(self):
         bob = signed_in(self.env, BOB)
         projects = bob.get("/auth/me").json()["projects"]

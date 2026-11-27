@@ -148,6 +148,26 @@ def validate_project_dirs(data_dir, audio_dir, *, others=(), protected=(),
 
 # --- sandboxes ---------------------------------------------------------------
 
+_LEGACY_STARTER_COLORS = {
+    "starter-tools": ("#1a73e8", "#1f78b4"),
+    "starter-manual": ("#e37400", "#ff7f00"),
+    "starter-loss": ("#d93025", "#e31a1c"),
+    "starter-workaround": ("#188038", "#b2df8a"),
+    "starter-collab": ("#9334e6", "#6a3d9a"),
+    "starter-wish": ("#00897b", "#33a02c"),
+}
+
+
+def normalize_starter_colors(nodes):
+    """Bring the original sandbox root colors onto the picker palette."""
+    for node in nodes:
+        if not isinstance(node, dict) or node.get("parentId") is not None:
+            continue
+        code_id = node.get("id")
+        colors = _LEGACY_STARTER_COLORS.get(code_id) if isinstance(code_id, str) else None
+        if colors and node.get("color") == colors[0]:
+            node["color"] = colors[1]
+
 
 def person_dir_name(email, handle):
     """A person's sandbox folder: their handle, which is unique and never
