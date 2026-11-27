@@ -78,6 +78,17 @@ body {
   overflow-wrap: anywhere;
 }
 #upload-status.error { color: #c5221f; }
+#retry-project, #retry-open {
+  border: 1px solid #cbd9eb;
+  border-radius: 4px;
+  background: #fff;
+  color: #1a65ad;
+  font: inherit;
+  cursor: pointer;
+  padding: 3px 8px;
+}
+#retry-project { align-self: flex-start; font-size: 11px; margin-bottom: 4px; }
+#retry-open { margin-top: 8px; }
 #file-scroll {
   flex: 1;
   min-height: 0;
@@ -468,7 +479,7 @@ body {
   55%  { opacity: 0.28; }
   100% { opacity: 0; }
 }
-#empty-state { text-align: center; color: #bbb; margin-top: 20vh; font-size: 15px; }
+#empty-state { text-align: center; color: #666; margin-top: 20vh; font-size: 15px; }
 #text-display {
   max-width: min(68ch, 800px);
   margin: 0;

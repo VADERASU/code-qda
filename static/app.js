@@ -1,7 +1,7 @@
-import {BASE, apiFetch, apiPost, requestSession, toSignIn} from './api.js';
+import {BASE, apiFetch, apiPost, apiRead, isTransientRequestError, requestSession, toSignIn} from './api.js';
 import {initReading} from './reading.js';
 import {initSession} from './session.js';
-import {canUseCachedCoding, createOfflineCoding} from './offline-coding.js';
+import {createOfflineCoding} from './offline-coding.js';
 import {offlineSession, rememberSession} from './offline-store.js';
 import {initUpload} from './upload.js';
 import {initRecordings, loadRecordings} from './recordings.js';
@@ -65,6 +65,7 @@ const sidebarHandlers = {
 // available for them.
 const transcriptFiles = new Set();
 const availableFiles = new Set();
+let listedFiles = [];
 let fileLoad = 0;
 let offlineCoding;
 let loadedCoding;
@@ -80,6 +81,9 @@ const downloadDraft = document.getElementById('download-coding-draft');
 const verifyButton = document.getElementById('verify-btn');
 const textDisplay = document.getElementById('text-display');
 const verifyView = document.getElementById('verify-view');
+const openStatus = document.getElementById('open-status');
+const retryOpen = document.getElementById('retry-open');
+const retryProject = document.getElementById('retry-project');
 initReading();
 
 // The .md span the verification view left off on, waiting for the coding view
@@ -95,6 +99,7 @@ initVerify(verifyView, async (dirty, span) => {
   // the place itself, once the new text is on the page.
   if (dirty && state.currentFile) {
     await loadFile(state.currentFile);
+    loadFiles().catch(() => {});
   } else {
     restorePlace();
   }
@@ -195,24 +200,27 @@ function noteTranscripts(files) {
 }
 
 async function loadFiles() {
-  displayFiles(await projectFiles());
+  listedFiles = noteTranscripts(await projectFiles());
+  displayFiles();
 }
 
-function displayFiles(files) {
-  renderFiles(noteTranscripts(files), name => loadFile(name).catch(reportLoadError));
+function displayFiles() {
+  renderFiles(listedFiles, name => loadFile(name).catch(reportLoadError));
   verifyButton.hidden = !transcriptFiles.has(state.currentFile);
 }
 
 async function projectFiles() {
   try {
     if (offlineCoding && !navigator.onLine) throw new TypeError('Offline');
-    const files = await apiFetch('/api/files', offlineCoding ? {signal: AbortSignal.timeout(8000)} : undefined);
+    const files = await apiRead('/api/files');
     if (offlineCoding) setCodingConnection(true);
     return files;
   } catch (error) {
-    if (!offlineCoding || !canUseCachedCoding(error)) throw error;
+    if (!offlineCoding || !isTransientRequestError(error)) throw error;
+    const files = (await offlineCoding.list()).filter(record => record.snapshot).map(record => ({name: record.name}));
+    if (!files.length && navigator.onLine) throw error;
     setCodingConnection(false);
-    return (await offlineCoding.list()).filter(record => record.snapshot).map(record => ({name: record.name}));
+    return files;
   }
 }
 
@@ -226,14 +234,7 @@ function reportLoadError(error) {
 
 async function loadOverview() {
   if (disconnected) return;
-  let overviewData;
-  try {
-    overviewData = await apiFetch('/api/codes-overview', offlineCoding ? {signal: AbortSignal.timeout(8000)} : undefined);
-  } catch (error) {
-    if (!offlineCoding || !canUseCachedCoding(error)) throw error;
-    setCodingConnection(false);
-    return;
-  }
+  const overviewData = await apiRead('/api/codes-overview');
   const rawCodes = Array.isArray(overviewData?.codes) ? overviewData.codes : [];
   state.overviewCountsById = new Map(
     rawCodes.filter(code => code.id && Number.isFinite(code.count)).map(code => [code.id, code.count])
@@ -265,19 +266,18 @@ async function loadFile(name, {resume = true, updateUrl = true} = {}) {
   closeVerify({keepPlace: false, notify: false});
   loadingFile = true;
   verifyButton.disabled = true;
-  let fileData, codesData, files, offline;
+  let fileData, codesData, offline;
   try {
     if (offlineCoding) {
-      [offline, files] = await Promise.all([offlineCoding.open(name), projectFiles()]);
+      offline = await offlineCoding.open(name);
       const {snapshot, pending} = offline.record;
       fileData = {content: pending?.content ?? snapshot.content};
       codesData = pending ? {...snapshot, rev: pending.rev,
         codeTree: pending.latest.codeTree, annotations: pending.latest.annotations} : snapshot;
     } else {
-      [fileData, codesData, files] = await Promise.all([
-        apiFetch(`/api/file?name=${encodeURIComponent(name)}`),
-        apiFetch(`/api/codes?name=${encodeURIComponent(name)}`),
-        projectFiles()
+      [fileData, codesData] = await Promise.all([
+        apiRead(`/api/file?name=${encodeURIComponent(name)}`),
+        apiRead(`/api/codes?name=${encodeURIComponent(name)}`)
       ]);
     }
   } catch (error) {
@@ -309,8 +309,8 @@ async function loadFile(name, {resume = true, updateUrl = true} = {}) {
     textRev: offline.record.pending?.textRev ?? offline.record.snapshot.textRev,
     recovery: Boolean(offline.record.recovery)
   };
-  if (offline?.offline) setCodingConnection(false);
-  displayFiles(files);
+  if (offline) setCodingConnection(!offline.offline);
+  displayFiles();
   showMainContent();
   textDisplay.hidden = false;
   fileBar.hidden = false;
@@ -343,21 +343,32 @@ async function restoreFromUrl() {
   const name = new URL(window.location.href).searchParams.get('file');
   if (name) {
     const request = fileLoad + 1;
+    setOpenStatus('Loading transcript…');
     try {
       await loadFile(name, {updateUrl: false});
     } catch (error) {
       // A newer selection may have completed while this request failed.
       if (request !== fileLoad) return;
       if (error.status === 401) return reportLoadError(error);
-      await showFileOverview();
-      reportLoadError(error);
+      closeTranscript();
+      const message = error.status === 404 ? 'Transcript not found.'
+        : disconnected ? 'This transcript is unavailable offline.' : 'Could not open the transcript.';
+      setOpenStatus(message, restoreFromUrl);
     }
   } else {
-    await showFileOverview();
+    closeTranscript();
+    setOpenStatus('No transcript open');
+    await refreshProject();
   }
 }
 
-async function showFileOverview() {
+function setOpenStatus(message, retry) {
+  openStatus.textContent = message;
+  retryOpen.hidden = !retry;
+  retryOpen.onclick = retry || null;
+}
+
+function closeTranscript() {
   cancelAnnotationResize();
   ++fileLoad; // Ignore any transcript request still in flight.
   closeVerify({keepPlace: false, notify: false});
@@ -375,15 +386,20 @@ async function showFileOverview() {
   showSaveStatus('');
   textDisplay.hidden = false;
   fileBar.hidden = true;
+  displayFiles();
   clearOverview();
+  renderSidebar(sidebarHandlers);
   toTop();
-  const results = await Promise.allSettled([loadFiles(), loadOverview()]);
-  if (results.some(result => result.status === 'rejected')) {
-    showSaveStatus('load failed', true);
-  }
 }
 
-window.addEventListener('popstate', restoreFromUrl);
+async function refreshProject(files = loadFiles()) {
+  retryProject.hidden = true;
+  const overview = disconnected ? files.then(loadOverview) : loadOverview();
+  const results = await Promise.allSettled([files, overview]);
+  retryProject.hidden = results.every(result => result.status === 'fulfilled');
+}
+
+retryProject.onclick = () => refreshProject();
 
 // Others code the same project. Coming back to this tab is when their
 // progress is worth catching up on, the way a pull would.
@@ -401,8 +417,9 @@ window.addEventListener('offline', () => {
   loadFiles().catch(() => {});
 });
 window.addEventListener('online', () => {
+  if (!state.currentFile && !retryOpen.hidden) retryOpen.click();
   if (!offlineCoding) return;
-  loadFiles().catch(() => {});
+  refreshProject();
   offlineCoding.sync();
 });
 
@@ -1060,7 +1077,7 @@ async function saveCodes() {
   try {
     await request;
     if (state.currentFile === file) showSaveStatus('saved');
-    loadOverview();
+    loadOverview().catch(() => {});
     loadFiles().catch(() => {});   // this file's coding progress just moved
   } catch (error) {
     if (state.currentFile !== file) return;
@@ -1117,7 +1134,7 @@ async function deleteCodeNode(codeId) {
     state.annotations = state.annotations.filter(annotation => validIds.has(annotation.codeId));
     renderText();
     renderSidebar(sidebarHandlers);
-    loadOverview();
+    loadOverview().catch(() => {});
   }
   showSaveStatus('code deleted');
 }
@@ -1140,14 +1157,21 @@ async function pruneEmptyCodes() {
   state.annotations = state.annotations.filter(annotation => validIds.has(annotation.codeId));
   renderText();
   renderSidebar(sidebarHandlers);
-  loadOverview();
+  loadOverview().catch(() => {});
   showSaveStatus(
     data.pruned === 0 ? 'nothing to prune' : `pruned ${data.pruned} empty code${data.pruned !== 1 ? 's' : ''}`
   );
 }
 
-async function init() {
-  if (!await setupCodingSession()) return;
+export async function start() {
+  setOpenStatus('Loading project…');
+  try {
+    if (!await setupCodingSession()) return;
+  } catch {
+    setOpenStatus('Could not connect to this project.', start);
+    return;
+  }
+  window.addEventListener('popstate', restoreFromUrl);
   initRecordings({
     openFile: name => loadFile(name),
     onDone: async jobs => {
@@ -1165,14 +1189,17 @@ async function init() {
     if (transcripts.length === 1) await loadFile(transcripts[0].name);
   }});
   if (!disconnected) loadRecordings();
-  const results = await Promise.allSettled([loadFiles(), loadOverview()]);
-  if (results.some(result => result.status === 'rejected')) {
-    showSaveStatus('load failed', true);
+  const files = loadFiles();
+  const sidebar = refreshProject(files);
+  const name = new URL(window.location.href).searchParams.get('file');
+  if (name) {
+    // Older bookmarks can be rewritten to the canonical name once Files loads.
+    if (name.endsWith('.16k.md')) await files.catch(() => {});
+    if (fileLoad === 0) await restoreFromUrl();
+  } else {
+    setOpenStatus('No transcript open');
   }
-  // Do not override a file the user selected while startup requests ran.
-  if (fileLoad === 0 && new URL(window.location.href).searchParams.get('file')) {
-    await restoreFromUrl();
-  }
+  await sidebar;
   offlineCoding?.sync();
 }
 
@@ -1181,8 +1208,9 @@ async function setupCodingSession() {
   try {
     if (!navigator.onLine) throw new TypeError('Offline');
     me = await requestSession();
-  } catch {
+  } catch (error) {
     me = await offlineSession().catch(() => undefined);
+    if (BASE && !me) throw error;
     disconnected = Boolean(me);
   }
   if (!BASE) {
@@ -1197,9 +1225,9 @@ async function setupCodingSession() {
     return false;
   }
   const project = BASE.slice('/p/'.length);
-  if (!me?.projects?.some(entry => entry.slug === project)) {
-    if (!me) showSaveStatus('Connect to open this project on this device', true, true);
-    return !me;
+  if (!me.projects?.some(entry => entry.slug === project)) {
+    setOpenStatus('This project is unavailable.');
+    return false;
   }
   initSession(me);
   if (!('serviceWorker' in navigator)) return true;
@@ -1217,8 +1245,6 @@ async function setupCodingSession() {
   }
   return true;
 }
-
-init();
 
 // Keep Files compact and independently scrollable; reserve most sidebar space
 // for Codes even when Files is dragged larger or the window becomes shorter.

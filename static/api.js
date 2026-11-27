@@ -29,6 +29,25 @@ export async function apiFetch(path, options) {
   return response.json();
 }
 
+export function isTransientRequestError(error) {
+  return error instanceof TypeError || error instanceof SyntaxError
+    || error.name === 'TimeoutError' || error.status === 408 || error.status >= 500;
+}
+
+export async function retryRead(read) {
+  try {
+    return await read();
+  } catch (error) {
+    if (!navigator.onLine || !isTransientRequestError(error)) throw error;
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return read();
+  }
+}
+
+export function apiRead(path) {
+  return retryRead(() => apiFetch(path, {signal: AbortSignal.timeout(8000)}));
+}
+
 // Always a JSON body, even an empty one: the server refuses state-changing
 // requests that are not application/json, which is what keeps another site
 // from submitting a form to this one.
@@ -51,9 +70,14 @@ export async function sessionInfo() {
 }
 
 export async function requestSession() {
-  const response = await fetch('/auth/me', {signal: AbortSignal.timeout(8000)});
-  if (response.status === 401) return {mode: 'hosted', signedOut: true};
-  if (response.status >= 500) throw new Error(response.status);
-  if (!response.ok) return {mode: 'local'};
-  return response.json();
+  return retryRead(async () => {
+    const response = await fetch('/auth/me', {signal: AbortSignal.timeout(8000)});
+    if (response.status === 401) return {mode: 'hosted', signedOut: true};
+    if (!response.ok) {
+      const error = new Error(response.status);
+      error.status = response.status;
+      throw error;
+    }
+    return response.json();
+  });
 }

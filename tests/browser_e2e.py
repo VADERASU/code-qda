@@ -23,6 +23,7 @@ import unittest
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import support  # noqa: E402
@@ -247,6 +248,69 @@ class E2E(unittest.TestCase):
         b.wait_for("document.querySelectorAll('#text-display .coded').length === 1")
         self.assertIn("simulator", b.js("document.querySelector('#text-display .coded').textContent"))
         self.assertTrue(b.js("location.search.includes('file=alpha.md')"))
+
+    def test_retries_failed_app_download(self):
+        b = self.browser
+        project = support.fixture_project(support.temp_dir(self))
+        server = support.local_server(self, project)
+        asset = "/static/code-search.js"
+        serve_static = support.appmod.Handler._try_serve_static
+        failures = []
+
+        def flaky_asset(handler, path):
+            if path == asset and not failures:
+                failures.append(path)
+                handler._status(503)
+                return True
+            return serve_static(handler, path)
+
+        self.expected.add((503, asset))
+        with mock.patch.object(support.appmod.Handler, "_try_serve_static", flaky_asset):
+            b.go(f"http://localhost:{server.port}/?file=alpha.md")
+            b.wait_for("document.querySelector('#text-display .coded') !== null")
+        self.assertEqual(failures, [asset])
+        self.assertEqual(b.js("location.search"), "?file=alpha.md")
+
+    def test_recovers_bookmark_and_file_list_after_failed_requests(self):
+        b = self.browser
+        env = support.hosted_setup(self)
+        host = f"localhost:{env['server'].port}"
+        origin = f"http://{host}"
+        env["app"].public_origin = origin
+        env["app"].allowed_hosts = frozenset({host})
+        session = "/auth/me"
+        files = "/p/sandbox/api/files"
+        transcript = "/p/sandbox/api/codes?name=practice-interview.md&text=1"
+        failures = {session: 1, files: 2, transcript: 2}
+        dispatch = support.appmod.Handler._dispatch_hosted
+
+        def flaky_request(handler, path, params, query):
+            if failures.get(handler.path, 0):
+                failures[handler.path] -= 1
+                handler._status(503)
+                return
+            dispatch(handler, path, params, query)
+
+        self.expected.update((503, path) for path in failures)
+        target = "/p/sandbox/?file=practice-interview.md"
+        with mock.patch.object(support.appmod.Handler, "_dispatch_hosted", flaky_request):
+            b.go(f"{origin}/login?next=" + urllib.parse.quote(target))
+            b.js(f"""(() => {{ const f = document.getElementById('login-form');
+                f.email.value = 'carol@example.edu';
+                f.password.value = {json.dumps(env['passwords']['carol@example.edu'])};
+                f.requestSubmit(); }})()""")
+            b.wait_for("document.getElementById('retry-open')?.hidden === false")
+            b.wait_for("document.getElementById('retry-project')?.hidden === false")
+            self.assertEqual(b.js("document.getElementById('open-status').textContent"),
+                             "Could not open the transcript.")
+            self.assertTrue(b.js("!document.getElementById('session-bar').hidden"))
+            b.js("window.samePage = true; document.getElementById('retry-open').click()")
+            b.wait_for("document.getElementById('file-bar-name')?.textContent === 'practice-interview.md'")
+            self.assertFalse(b.js("Boolean(document.querySelector('.file-item'))"))
+            b.js("document.getElementById('retry-project').click()")
+            b.wait_for("document.querySelector('.file-item.active') !== null")
+        self.assertTrue(b.js("window.samePage && location.search === '?file=practice-interview.md'"))
+        self.assertEqual(failures, {session: 0, files: 0, transcript: 0})
 
     def test_progress_and_resume(self):
         """The file list shows how far coding has got, and opening a transcript

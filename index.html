@@ -16,6 +16,7 @@
       <input id="upload-input" type="file" multiple hidden accept=".txt,.md,.json,.opus,.ogg,.m4a,.mp3,.wav">
     </div>
     <div id="upload-status" role="status" hidden></div>
+    <button id="retry-project" type="button" hidden>Retry loading project</button>
     <div id="file-scroll">
       <div id="file-list"></div>
       <div id="recordings" hidden></div>
@@ -53,7 +54,10 @@
 <div id="resize-handle"></div>
 
 <div id="main">
-  <div id="empty-state">No transcript open</div>
+  <div id="empty-state">
+    <p id="open-status" role="status">Loading project…</p>
+    <button id="retry-open" type="button" hidden>Retry</button>
+  </div>
   <div id="file-bar" hidden>
     <div id="file-bar-inner">
       <span id="file-bar-name"></span>
@@ -121,6 +125,6 @@
   </label>
 </div>
 
-<script type="module" src="/static/app.js"></script>
+<script src="/static/start.js" defer></script>
 </body>
 </html>

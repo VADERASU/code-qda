@@ -1,4 +1,4 @@
-import {apiUrl} from './api.js';
+import {apiUrl, isTransientRequestError, retryRead} from './api.js';
 import {offlineFile, offlineFiles, updateOfflineFile} from './offline-store.js';
 
 class CodingRequestError extends Error {
@@ -6,11 +6,6 @@ class CodingRequestError extends Error {
     super(`Coding request failed (${status})`);
     this.status = status;
   }
-}
-
-export function canUseCachedCoding(error) {
-  return error instanceof TypeError || error instanceof SyntaxError
-    || error.name === 'TimeoutError' || error.status >= 500;
 }
 
 async function requestCoding(path, data) {
@@ -44,9 +39,9 @@ export function createOfflineCoding(owner, project, onChange) {
     const cached = await read(name).catch(() => undefined);
     let snapshot;
     try {
-      snapshot = await requestCoding(`${path(name)}&text=1`);
+      snapshot = await retryRead(() => requestCoding(`${path(name)}&text=1`));
     } catch (error) {
-      if (canUseCachedCoding(error)) {
+      if (isTransientRequestError(error)) {
         const current = await read(name).catch(() => undefined);
         if (current?.snapshot) return {record: current, offline: true};
       }
@@ -129,7 +124,7 @@ export function createOfflineCoding(owner, project, onChange) {
       try {
         await send(name);
       } catch (error) {
-        const retry = canUseCachedCoding(error);
+        const retry = isTransientRequestError(error);
         await onChange(name, {type: retry ? 'waiting' : 'error', error});
         if (retry) return true;
       }
