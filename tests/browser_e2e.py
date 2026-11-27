@@ -214,6 +214,12 @@ class E2E(unittest.TestCase):
         cls.browser.close()
 
     def setUp(self):
+        # Leave the last test's page, so nothing it still does (an audio
+        # element reporting a load error, say) lands in this test. And cookies
+        # ignore the port, so one test's session would otherwise reach the
+        # next test's server, on another port of localhost, and be refused.
+        self.browser.go("about:blank", settle=0.2)
+        self.browser.call("Network.clearBrowserCookies")
         self.browser.problems.clear()
         # (status, URL suffix) of refusals a test provokes on purpose; the
         # browser logs those as errors, and nothing else may appear.
@@ -501,6 +507,70 @@ class E2E(unittest.TestCase):
         b.js(f"{add}('carol@example.edu')")
         b.wait_for("document.querySelector('.project-members summary').textContent === 'Members (2)'")
         self.assertIn("carol@example.edu", env["registry"].records()["pilot-study"]["members"])
+
+
+    def test_recording_to_verified_transcript(self):
+        from unittest import mock
+        import test_transcribe
+        from qda_transcribe import Transcriber
+        b = self.browser
+        env = support.hosted_setup(self)
+        port = env["server"].port
+        origin = f"http://localhost:{port}"
+        env["app"].public_origin = origin
+        env["app"].allowed_hosts = frozenset({f"localhost:{port}"})
+        fake = env["base"] / "fake_run.py"
+        fake.write_text(test_transcribe.FAKE)
+        patcher = mock.patch.dict(os.environ, {"HF_TOKEN": "hf_test", "FAKE_PIPELINE": '{"sleep": 3}',
+                                               "FAKE_RECORD": str(env["base"] / "seen.json")})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        transcriber = Transcriber(env["store"], env["state"] / "transcription", pipeline=fake,
+                                  check=lambda: [], second_opinion=lambda: False)
+        transcriber.start()
+        self.addCleanup(transcriber.stop)
+        env["app"].transcriber = transcriber
+
+        b.go(f"{origin}/login")
+        b.js(f"""(() => {{ const f = document.getElementById('login-form');
+            f.email.value = 'bob@example.edu';
+            f.password.value = {json.dumps(env['passwords']['bob@example.edu'])};
+            f.requestSubmit(); }})()""")
+        b.wait_for("location.pathname === '/'")
+        self.assertIn("From a recording to a coded transcript", b.js("document.body.textContent"))
+
+        # The practice interview explains that it has no audio, and how to get some.
+        b.go(f"{origin}/p/sandbox/?file=practice-interview.md")
+        b.wait_for("document.querySelectorAll('#text-display .coded').length >= 5")
+        b.wait_for("document.querySelector('.recordings-hint')?.textContent.includes('Upload a recording')")
+        b.js("[...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Verify against audio').click()")
+        b.wait_for("document.body.textContent.includes('This transcript has no audio.')")
+        self.assertNotIn("no audio filename set", b.js("document.body.textContent"))
+
+        # Upload a recording, transcribe it, open the result.
+        b.go(f"{origin}/p/beta/")
+        b.wait_for("document.querySelectorAll('.file-item').length === 1")
+        recording = support.temp_dir(self) / "site visit.m4a"
+        recording.write_bytes(test_transcribe.M4A)
+        doc = b.call("DOM.getDocument")["root"]["nodeId"]
+        node = b.call("DOM.querySelector", nodeId=doc, selector="#upload-input")["nodeId"]
+        b.call("DOM.setFileInputFiles", nodeId=node, files=[str(recording)])
+        b.wait_for("document.getElementById('upload-status').textContent.includes('Transcribe it under Recordings')")
+        b.wait_for("document.querySelector('#recordings .recording-name')?.textContent === 'site visit.m4a'")
+        b.js("[...document.querySelectorAll('#recordings button')].find(x => x.textContent === 'Transcribe').click()")
+        b.wait_for("!!document.querySelector('#recordings select')")
+        b.js("""(() => { const s = document.querySelector('#recordings select'); s.value = '3';
+            [...document.querySelectorAll('#recordings button')].find(x => x.textContent === 'Start').click(); })()""")
+        b.wait_for("document.getElementById('recordings').textContent.includes('Transcribing')", timeout=4)
+        b.wait_for("document.getElementById('upload-status').textContent.includes('site visit.md is ready')", timeout=15)
+        self.assertEqual(json.loads((env["base"] / "seen.json").read_text())["speakers"], "3")
+        b.wait_for("document.querySelectorAll('.file-item').length === 2")
+        b.js("[...document.querySelectorAll('#recordings button')].find(x => x.textContent === 'site visit.md').click()")
+        b.wait_for("document.getElementById('text-display').textContent.includes('tell me about the site')")
+        b.js("[...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Verify against audio').click()")
+        b.wait_for("!!document.querySelector('#vf-noaudio')")
+        self.assertTrue(b.js("document.querySelector('#vf-noaudio').hidden"))   # audio is there
+        self.expected.add((206, "/p/beta/api/audio?name=site%20visit.16k.opus"))
 
 
 if __name__ == "__main__":

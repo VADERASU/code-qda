@@ -160,6 +160,10 @@ over HTTPS with Tailscale Funnel. [Hosting guide](docs/hosting.md)
   partly coded practice interview.
 - **Uploads.** Members add transcripts (`.txt`, `.md`, `.tx.json`) and audio
   from the Files list. Uploads never replace an existing file.
+- **Transcription.** Under **Recordings**, **Transcribe** runs the
+  transcription pipeline on the server's GPU. The result is ready to verify
+  against the audio.
+  [Setting it up](docs/hosting.md#transcribing-recordings-on-the-server)
 - **Edit history.** Transcript corrections and codings record the signed-in
   person's handle and the time.
 - **Coding at the same time.** The server merges codebook edits by code.

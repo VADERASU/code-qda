@@ -2,6 +2,7 @@ import {apiFetch, apiPost} from './api.js';
 import {initReading} from './reading.js';
 import {initSession} from './session.js';
 import {initUpload} from './upload.js';
+import {initRecordings, loadRecordings} from './recordings.js';
 import {toTop} from './place.js';
 import {closeVerify, initVerify, isVerifying, openVerify} from './verify.js';
 import {
@@ -306,7 +307,10 @@ window.addEventListener('popstate', restoreFromUrl);
 // Others code the same project. Coming back to this tab is when their
 // progress is worth catching up on, the way a pull would.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') loadFiles().catch(() => {});
+  if (document.visibilityState === 'visible') {
+    loadFiles().catch(() => {});
+    loadRecordings();
+  }
 });
 
 async function onOverviewInstanceClick(instance) {
@@ -941,10 +945,24 @@ async function pruneEmptyCodes() {
 
 async function init() {
   initSession();
-  initUpload({onUploaded: async transcripts => {
+  initRecordings({
+    openFile: name => loadFile(name),
+    onDone: async jobs => {
+      await loadFiles().catch(() => {});
+      const status = document.getElementById('upload-status');
+      status.classList.remove('error');
+      status.textContent = `${jobs.map(job => job.transcript).join(', ')} ${jobs.length > 1 ? 'are' : 'is'} ready. `
+        + 'Open it and use Verify against audio to check it against the recording.';
+      status.hidden = false;
+    }
+  });
+  initUpload({onUploaded: async added => {
     await loadFiles();
-    if (transcripts.length === 1) await loadFile(transcripts[0]);
+    if (added.some(item => item.kind === 'audio')) await loadRecordings();
+    const transcripts = added.filter(item => item.kind === 'transcript');
+    if (transcripts.length === 1) await loadFile(transcripts[0].name);
   }});
+  loadRecordings();
   const results = await Promise.allSettled([loadFiles(), loadOverview()]);
   if (results.some(result => result.status === 'rejected')) {
     showSaveStatus('load failed', true);

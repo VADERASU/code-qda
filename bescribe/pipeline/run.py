@@ -21,6 +21,9 @@ def main():
     ap.add_argument("--install", type=Path, default=DEFAULT_INSTALL_DIR)
     ap.add_argument("--audio-dir", type=Path,
                     help="browser audio destination (default: QDA_AUDIO_DIR or INSTALL/audio)")
+    ap.add_argument("--no-second-opinion", action="store_true",
+                    help="skip the comparison transcription (second_opinion.py); the review "
+                         "queue then ranks on Whisper's own confidence alone")
     args = ap.parse_args()
     args.outdir = args.outdir.resolve()
     args.install = args.install.resolve()
@@ -62,10 +65,12 @@ def main():
 
         if not reused:
             wav = src.with_suffix(".wav")
-            for interpreter, script, input_path, suffix in (
-                (ROOT / ".venv-asr/bin/python", "second_opinion.py", wav, ".parakeet.json"),
-                (env["WX_PYTHON"], "realign.py", src, ".realigned.json"),
-            ):
+            stages = [(ROOT / ".venv-asr/bin/python", "second_opinion.py", wav, ".parakeet.json"),
+                      (env["WX_PYTHON"], "realign.py", src, ".realigned.json")]
+            if args.no_second_opinion:
+                print("  Skipping the second transcription for comparison.", flush=True)
+                stages = stages[1:]
+            for interpreter, script, input_path, suffix in stages:
                 # Cached intermediate results need no model environment.
                 if not src.with_suffix(suffix).exists():
                     print("  Running the second transcription for comparison..."

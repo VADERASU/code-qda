@@ -271,8 +271,10 @@ Any member can add:
   the transcription pipeline, which the app renders to `.md`. The limit is
   32 MB per file.
 - **Audio:** `.opus`, `.ogg`, `.m4a`, `.mp3` or `.wav`, up to 1 GB per file.
-  It plays with a `.tx.json` whose `audio` field names that file. A plain
-  `.txt` or `.md` transcript has no timings, so audio can't attach to it.
+  A new recording appears under **Recordings**, ready to
+  [transcribe](#transcribing-recordings-on-the-server). Audio also plays with
+  an uploaded `.tx.json` whose `audio` field names that file. A plain `.txt`
+  or `.md` transcript has no timings, so audio can't attach to it.
 
 An upload never replaces a file. If a transcript or audio file with that name
 exists, the app refuses and says so. Rename the file and upload it again.
@@ -280,6 +282,61 @@ Uploads go to the project's own folders on this machine and are written
 readable only by you, the account running the app. An upload is refused if it
 would leave less than 2 GB free on that disk. Each upload is a `write` in the
 audit log.
+
+## Transcribing recordings on the server
+
+Members can turn an uploaded recording into a transcript without installing
+anything. Under **Recordings** in the Files list, **Transcribe** asks how many
+people speak, then runs the transcription pipeline (`make prepare`) on this
+machine's GPU. When it finishes, the transcript and its playback audio appear
+in the project, ready for **Verify against audio**. The projects page walks
+people through the steps: upload, transcribe, verify, code.
+
+### Setting it up
+
+Until these are in place, **Transcribe** is turned off and says what's
+missing. The server log also says so at startup.
+
+1. **The pipeline environments.** Run `make install` once (they are already
+   installed on this machine). `ffmpeg` must be on the `PATH`.
+2. **A Hugging Face token** for speaker diarization. Accept the model licences
+   at `huggingface.co/pyannote/speaker-diarization-community-1` and
+   `huggingface.co/pyannote/segmentation-3.0`, then put the token in
+   `bescribe/.env`:
+
+   ```sh
+   cp bescribe/.env.example bescribe/.env
+   chmod 600 bescribe/.env        # then set HF_TOKEN=...
+   ```
+
+   The server reads it when each job starts, so you don't need to restart.
+   It is passed to the pipeline in the environment, never on a command line.
+3. **Optional: the comparison transcription.** If
+   `bescribe/pipeline/second_opinion.py` is present (it is Git-ignored and
+   supplied separately), each job also runs a second model, and its
+   disagreements drive the **Needs review** queue. Without it, jobs skip that
+   stage and the queue ranks segments on Whisper's own confidence alone. Each
+   job records which way it ran.
+
+### How jobs run
+
+- **One job at a time**, in the order requested, since there is one GPU. Each
+  recording shows its place in the queue, the current stage, and **Cancel**.
+- **Each person can have 3 jobs** waiting or running at once. A job that runs
+  longer than 6 hours is stopped.
+- **Nothing is replaced.** The pipeline works in a private staging folder,
+  `<state-directory>/transcription/`. Only the finished transcript is moved
+  into the project, and only if no file with its name has appeared meanwhile.
+  The staging folder is removed after a success. After a failure it is kept,
+  so **Try again** reuses the finished stages.
+- **Restarts.** Job status is kept in `<state-directory>/transcriptions.json`.
+  A job that was running when the server stopped starts again on the next
+  start.
+- **Where the audio goes.** Nowhere: the models run on this machine. The
+  first run downloads the models from Hugging Face.
+
+Each request is in the audit log as `transcription_queued`, with who asked,
+the project and the file.
 
 ## Running it
 
@@ -365,6 +422,8 @@ These are not covered:
   line with the approved personnel list.
 - **Disk use.** Anyone with an account can upload, up to the per-file limits
   and the 2 GB free-space floor. There is no per-person quota.
+- **GPU time.** Anyone with an account can queue transcriptions, 3 at a time
+  each, and they run one after another. A long queue delays everyone's jobs.
 
 **IRB checklist before inviting anyone:**
 

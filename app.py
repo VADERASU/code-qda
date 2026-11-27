@@ -379,6 +379,7 @@ class App:
     max_upload: int = MAX_UPLOAD
     state_dir: Path | None = None
     roots: dict | None = None           # allowed roots for registering existing storage
+    transcriber: object = None          # qda_transcribe.Transcriber (hosted)
 
 
 # (method, path under the project) -> (handler, writes?)
@@ -398,7 +399,31 @@ PROJECT_ROUTES = {
     ("POST", "/api/save-codes"): ("_save_shared_tree", True),
     ("POST", "/api/tx-edit"): ("_tx_edit", True),
     ("POST", "/api/upload"): ("_upload", "stream"),   # reads its own raw body
+    ("GET", "/api/recordings"): ("_list_recordings", False),
+    ("POST", "/api/transcribe"): ("_start_transcription", True),
+    ("POST", "/api/transcribe/cancel"): ("_cancel_transcription", True),
 }
+
+_playback_cache = {}    # .tx.json path -> (signature, the audio file it names)
+
+
+def playback_name(tx_path):
+    """The audio file a .tx.json names, read once per version of the file."""
+    try:
+        st = os.stat(tx_path)
+    except OSError:
+        return None
+    sig = (st.st_ino, st.st_mtime_ns, st.st_size)
+    cached = _playback_cache.get(str(tx_path))
+    if cached and cached[0] == sig:
+        return cached[1]
+    try:
+        audio = txfmt.load(tx_path).get("audio")
+    except (OSError, ValueError, AttributeError):
+        audio = None
+    name = safe_name(audio) if isinstance(audio, str) else None
+    _playback_cache[str(tx_path)] = (sig, name)
+    return name
 
 UPLOAD_TYPES = ("Upload a transcript (.txt, .md or .tx.json) or audio "
                 f"({', '.join(sorted(AUDIO_CONTENT_TYPES))}).")
@@ -1385,6 +1410,80 @@ class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
                     pass
         self._json({"ok": True, "kind": "audio", "name": name})
 
+    # --- transcription ---------------------------------------------------
+    #
+    # Recordings are the project's audio files that no transcript plays yet
+    # (playback renders made by the pipeline are hidden), each with its
+    # latest transcription job. The jobs run in qda_transcribe.
+
+    def _job_view(self, job):
+        view = {k: job.get(k) for k in ("id", "status", "stage", "error", "transcript",
+                                        "speakers", "ahead", "secondOpinion")}
+        view["by"] = job.get("handle")
+        return view
+
+    def _recordings(self):
+        transcriber = self.server.app.transcriber
+        playback = {playback_name(p) for p in self.project.md_dir.glob("*.tx.json")}
+        jobs = transcriber.jobs_for(self.project.md_dir) if transcriber else {}
+        recordings = []
+        try:
+            entries = sorted(self.project.audio_dir.iterdir())
+        except OSError:
+            entries = []
+        for path in entries:
+            name = path.name
+            if (name.startswith(".") or path.suffix.lower() not in AUDIO_CONTENT_TYPES
+                    or not path.is_file() or (name in playback and name not in jobs)):
+                continue
+            job = jobs.get(name)
+            recordings.append({"name": name, "size": path.stat().st_size,
+                               "job": self._job_view(job) if job else None})
+        if transcriber is None:
+            status = {"available": False, "local": True, "problems": []}
+        else:
+            status = transcriber.status()
+        return {"recordings": recordings, "transcribe": status}
+
+    def _list_recordings(self, params):
+        self._json(self._recordings())
+
+    def _transcription_request(self, action):
+        from qda_transcribe import NotFound, TranscribeError
+        if self.server.app.transcriber is None:
+            self._json({"error": "Transcription runs only on the hosted server. "
+                                 "Here, use make prepare AUDIO=... in a terminal."}, status=400)
+            return
+        try:
+            action(self.server.app.transcriber)
+        except NotFound as e:
+            self._json({"error": str(e)}, status=404)
+            return
+        except TranscribeError as e:
+            self._json({"error": str(e)}, status=400)
+            return
+        self._json(self._recordings())
+
+    def _start_transcription(self, params):
+        audio = safe_name(self.body.get("audio")) if isinstance(self.body.get("audio"), str) else None
+        user = self.user or {}
+
+        def start(transcriber):
+            from qda_transcribe import NotFound
+            if audio is None:
+                raise NotFound("Choose a recording.")
+            job = transcriber.submit(self.project, audio, self.body.get("speakers"),
+                                     user.get("email"), user.get("handle"))
+            if self.server.app.auth is not None:
+                self.server.app.auth.audit("transcription_queued", email=user.get("email"),
+                                           project=self.project.slug, file=audio,
+                                           speakers=job["speakers"], job=job["id"])
+        self._transcription_request(start)
+
+    def _cancel_transcription(self, params):
+        self._transcription_request(
+            lambda transcriber: transcriber.cancel(self.project, self.body.get("id")))
+
     def _load_shared_tree(self):
         if not self.project.codes_file.exists():
             return []
@@ -1623,13 +1722,16 @@ def build_hosted_app(state_dir):
                 print(f"warning: project {slug}: {key} {rec[key]} does not exist",
                       file=sys.stderr)
     auth = qda_auth.Auth(store)
+    from qda_transcribe import Transcriber
+    transcriber = Transcriber(store, state_dir / "transcription")
     if not auth.has_users():
         print("No accounts yet. Create yours with:\n"
               "  python3 app.py admin invite you@example.edu --admin", flush=True)
     return App(mode="hosted", auth=auth, registry=registry, public_origin=origin,
                allowed_hosts=frozenset(hosts), state_dir=state_dir,
                roots={"data": config.get("data_roots", []),
-                      "audio": config.get("audio_roots", [])})
+                      "audio": config.get("audio_roots", [])},
+               transcriber=transcriber)
 
 
 def main(argv=None):
@@ -1677,12 +1779,19 @@ def main(argv=None):
             server = QDAServer(("127.0.0.1", port), app)
             where = f"http://127.0.0.1:{port}"
         print(f"code-qda (hosted, {app.public_origin}) → {where}", flush=True)
+        app.transcriber.start()
+        problems = app.transcriber.check()
+        if problems:
+            print("Transcription is off until this server has " + " and ".join(problems) + ".",
+                  flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         print("")
     finally:
         server.server_close()
+        if app.transcriber is not None:
+            app.transcriber.stop()
 
 
 if __name__ == "__main__":

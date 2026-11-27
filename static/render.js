@@ -931,7 +931,8 @@ function fileSummary(codingStatus, coding, change) {
 
 export function renderFiles(files, onFileSelect) {
   // The list is rebuilt after every save; keep the reader's place in it.
-  const scrollTop = dom.fileList.scrollTop;
+  const scroller = dom.fileList.parentElement;
+  const scrollTop = scroller.scrollTop;
   dom.fileList.innerHTML = '';
   if (files.length === 0) {
     dom.fileList.innerHTML = '<div style="color:#aaa;font-size:12px;padding:4px 8px">No transcripts yet. Use Upload to add .txt, .md or .tx.json files.</div>';
@@ -979,7 +980,7 @@ export function renderFiles(files, onFileSelect) {
     element.onclick = () => onFileSelect(fileName);
     dom.fileList.appendChild(element);
   });
-  dom.fileList.scrollTop = scrollTop;
+  scroller.scrollTop = scrollTop;
 }
 
 export function renderText() {

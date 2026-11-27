@@ -1215,19 +1215,28 @@ export async function openVerify(fileName, atOffset = null) {
     audio.src = apiUrl(`/api/audio?name=${encodeURIComponent(view.tx.audio)}`);
     audio.playbackRate = SPEEDS[view.speedIndex];
     banner.hidden = true;
-  } else if (BASE) {
-    // Hosted: the audio lives on the server, set up by whoever runs it.
+  } else if (BASE && !view.tx.audio) {
+    // Hosted, and the transcript names no recording (the sandbox's practice
+    // interview, or a transcript made outside the pipeline).
     banner.hidden = false;
     banner.innerHTML = `
-      <strong>Audio isn't available for this transcript.</strong> You can still edit the transcript, but playback is unavailable.
-      Ask the project's admin to add <code>${esc(view.tx.audio || '(no audio filename set)')}</code> to the project's audio folder.`;
+      <strong>This transcript has no audio.</strong> You can still correct its text here.
+      To check a transcript against a recording, upload the recording with <b>Upload</b> in the Files list,
+      then click <b>Transcribe</b> beside it under Recordings.`;
+  } else if (BASE) {
+    // Hosted: members can upload the missing file themselves.
+    banner.hidden = false;
+    banner.innerHTML = `
+      <strong>This transcript's audio hasn't been uploaded.</strong> You can still edit the transcript.
+      To play it here, upload <code>${esc(view.tx.audio)}</code> with <b>Upload</b> in the Files list.`;
   } else {
     banner.hidden = false;
     banner.innerHTML = `
       <strong>Audio is missing on this computer.</strong> You can still edit the transcript, but playback is unavailable.
       <details>
         <summary>Set up audio playback</summary>
-        <p>This transcript needs the playback file <code>${esc(view.tx.audio || '(no audio filename set)')}</code>.</p>
+        <p>${view.tx.audio ? `This transcript needs the playback file <code>${esc(view.tx.audio)}</code>.`
+          : 'This transcript doesn\'t name a recording, so there is nothing to play.'}</p>
         <ul>
           <li><b>Have that playback file?</b> Put it in <code>md/audio/</code> inside the project folder.
             If you started the app with <code>QDA_AUDIO_DIR</code>, put it in that folder instead.</li>

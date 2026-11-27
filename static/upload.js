@@ -63,8 +63,8 @@ export function initUpload({onUploaded}) {
     const audio = added.filter(item => item.kind === 'audio').length;
     const parts = [];
     if (added.length) parts.push(`Added ${added.map(item => item.name).join(', ')}.`);
-    if (audio) parts.push('Audio plays with a .tx.json transcript that names it.');
+    if (audio) parts.push('Transcribe it under Recordings, or upload a .tx.json transcript that names it.');
     show([...parts, ...problems].join(' '), problems.length > 0);
-    if (added.length) await onUploaded(added.filter(item => item.kind === 'transcript').map(item => item.name));
+    if (added.length) await onUploaded(added);
   });
 }

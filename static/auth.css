@@ -71,6 +71,8 @@ button.danger:hover { background: #fcecec; }
 }
 .projects li a:hover { border-color: #1a73e8; background: #f6f9fe; }
 .projects .project-note { font-weight: 400; }
+.steps { margin: 0 0 8px 20px; }
+.steps li { margin-bottom: 6px; color: #333; }
 .project-members { margin: -2px 12px 12px; font-size: 13px; }
 .project-members summary { cursor: pointer; width: fit-content; color: #555; }
 .project-members .muted { margin-top: 6px; }
