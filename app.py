@@ -1706,6 +1706,8 @@ class QDAUnixServer(_ConnectionCap, socketserver.ThreadingMixIn,
     def __init__(self, path, app, max_connections=MAX_CONNECTIONS):
         self.app = app
         self._slots = threading.BoundedSemaphore(max_connections)
+        # Tailscale opens several upstream connections at once for workspace assets.
+        self.request_queue_size = max_connections
         self.socket_path = str(path)
         super().__init__(self.socket_path, Handler)
 

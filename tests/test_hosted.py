@@ -1,6 +1,7 @@
 """Hosted mode over HTTP: sign-in, CSRF, project isolation, admin."""
 import json
 import os
+import socket
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -342,6 +343,17 @@ class ManagedStorage(unittest.TestCase):
 
 
 class UnixSocket(unittest.TestCase):
+    def test_queues_workspace_connection_burst(self):
+        path = str(temp_dir(self) / "http.sock")
+        server = appmod.QDAUnixServer(path, appmod.App(mode="hosted"))
+        self.addCleanup(server.server_close)
+        # Queue one workspace's module requests before the accept loop runs.
+        for _ in range(17):
+            client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.addCleanup(client.close)
+            client.settimeout(1)
+            client.connect(path)
+
     def test_serves_and_trusts_forwarded_for(self):
         env = hosted_setup(self, unix=True)
         sock = Path(env["server"].unix_path)
