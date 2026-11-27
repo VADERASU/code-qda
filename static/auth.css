@@ -21,6 +21,7 @@ a { color: #1a65ad; }
   border: 1px solid #e0e0e0; border-radius: 8px; padding: 28px 28px 24px;
 }
 .card.wide { max-width: 960px; }
+.card.medium { max-width: 560px; }
 h1 { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
 h2 {
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em;
@@ -69,6 +70,10 @@ button.danger:hover { background: #fcecec; }
   margin-bottom: 8px; text-decoration: none; color: #222; font-weight: 600;
 }
 .projects li a:hover { border-color: #1a73e8; background: #f6f9fe; }
+.projects .project-note { font-weight: 400; }
+.project-members { margin: -2px 12px 12px; font-size: 13px; }
+.project-members summary { cursor: pointer; width: fit-content; color: #555; }
+.project-members .muted { margin-top: 6px; }
 
 /* admin */
 .topline { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }

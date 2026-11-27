@@ -4,25 +4,42 @@ Each project points at its own data directory (the .md / .tx.json /
 .annot.json / codes.json files, possibly its own private git repo) and its
 own audio directory (IRB-controlled, never committed). Hosted projects use
 either storage allocated by the app or existing directories registered by an
-admin. Membership is the whole access model in hosted mode: a member sees
-everything in a project, a non-member cannot tell it exists.
+admin, or by any signed-in person, who then owns it. Membership is the whole
+access model in hosted mode: a member sees everything in a project, a
+non-member cannot tell it exists. An owner can add people who already have
+accounts; only admins create accounts.
+
+Every account also has a *sandbox* at /p/sandbox/: a private project only
+that person can see, which starts with a copy of the starter files in
+starter/ (a made-up interview, a codebook and a few codings) so they can try
+things out.
 
 Local mode has exactly one implicit project, the repository's md/ directory.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
+import shutil
+import sys
 import tempfile
 import threading
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 
-from qda_store import STATE_DIR_MODE, StateDirError, ensure_private_dir
+import txfmt
+from qda_auth import HANDLE_RE
+from qda_store import STATE_DIR_MODE, STATE_FILE_MODE, StateDirError, ensure_private_dir
 
 ROOT = Path(__file__).resolve().parent
+STARTER_DIR = ROOT / "starter"
 SLUG_RE = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?")
+SANDBOX = "sandbox"
+RESERVED_SLUGS = frozenset({SANDBOX})
+MAX_OWNED_PROJECTS = 20         # per person; admins are not limited
 PROJECTS_FILE = "projects.json"
 EMPTY = {"version": 1, "projects": {}}
 
@@ -129,6 +146,77 @@ def validate_project_dirs(data_dir, audio_dir, *, others=(), protected=(),
     return data, audio
 
 
+# --- sandboxes ---------------------------------------------------------------
+
+
+def person_dir_name(email, handle):
+    """A person's sandbox folder: their handle, which is unique and never
+    changes. Without one, a digest of the email (which a handle can't look
+    like, since handles start with a letter or digit)."""
+    if isinstance(handle, str) and HANDLE_RE.fullmatch(handle):
+        return handle
+    return "_" + hashlib.sha256(email.encode("utf-8")).hexdigest()[:20]
+
+
+def _write_private(path, text):
+    txfmt.write_text_atomic(path, text, mode=STATE_FILE_MODE)
+
+
+def _place_codings(annotations, md):
+    """Starter codings with offsets that match this render of the .md.
+
+    Offsets are stored with the starter files; if the rendering ever changes,
+    each coding is found again by its text, and dropped if it is gone."""
+    placed = []
+    for ann in annotations if isinstance(annotations, list) else []:
+        if not isinstance(ann, dict) or not isinstance(ann.get("text"), str) or not ann["text"]:
+            continue
+        start = ann.get("start")
+        if not (isinstance(start, int) and md[start:start + len(ann["text"])] == ann["text"]):
+            start = md.find(ann["text"])
+        if start < 0:
+            continue
+        placed.append(dict(ann, start=start, end=start + len(ann["text"])))
+    return placed
+
+
+def populate_from_starter(md_dir, starter=STARTER_DIR):
+    """Copy the starter transcripts, codebook and codings into a new project.
+
+    A .tx.json is rendered to its .md here, so the two always agree.
+    """
+    starter = Path(starter)
+    if not starter.is_dir():
+        return
+    for src in sorted(starter.iterdir()):
+        name = src.name
+        if name.startswith(".") or not src.is_file():
+            continue
+        if name.endswith(".tx.json"):
+            stem = name[:-len(".tx.json")]
+            tx = txfmt.load(src)
+            md, _spans = txfmt.render_md(tx)
+            _write_private(md_dir / name, json.dumps(tx, indent=1, ensure_ascii=False))
+            _write_private(md_dir / (stem + ".md"), md)
+        elif name.endswith(".md") and not (starter / (name[:-3] + ".tx.json")).exists():
+            stem, md = name[:-3], src.read_text(encoding="utf-8")
+            _write_private(md_dir / name, md)
+        else:
+            if name == "codes.json":
+                _write_private(md_dir / name, src.read_text(encoding="utf-8"))
+            continue
+        annot = starter / (stem + ".annot.json")
+        if annot.is_file():
+            codings = _place_codings(json.loads(annot.read_text(encoding="utf-8")), md)
+            _write_private(md_dir / (stem + ".annot.json"),
+                           json.dumps(codings, indent=2, ensure_ascii=False))
+
+
+def _slug_from(name):
+    base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:30].strip("-")
+    return base or "project"
+
+
 class Registry:
     """Projects and their members, in projects.json in the state directory."""
 
@@ -146,23 +234,68 @@ class Registry:
         return Project(slug, rec.get("name") or slug,
                        Path(rec["data_dir"]), Path(rec["audio_dir"]))
 
-    def for_member(self, slug, email):
+    def for_member(self, slug, email, handle=None):
         """The project if `email` belongs to it; None if not or no such project.
 
         Both failures take the same path, so neither the response nor its
-        timing tells a non-member that the project exists.
+        timing tells a non-member that the project exists. "sandbox" is
+        always the signed-in person's own sandbox.
         """
+        if slug == SANDBOX:
+            return self.sandbox(email, handle)
         rec = self._all().get(slug) if isinstance(slug, str) else None
         if rec is None or email not in rec.get("members", ()):
             return None
         return self._project(slug, rec)
 
     def projects_for(self, email):
-        return sorted(
-            ({"slug": slug, "name": rec.get("name") or slug}
-             for slug, rec in self._all().items()
-             if email in rec.get("members", ())),
-            key=lambda p: p["name"].lower())
+        """Their projects by name, then their sandbox. Owners also get the
+        member list, to manage it."""
+        projects = []
+        for slug, rec in self._all().items():
+            if email not in rec.get("members", ()):
+                continue
+            entry = {"slug": slug, "name": rec.get("name") or slug,
+                     "owned": rec.get("owner") == email}
+            if entry["owned"]:
+                entry["members"] = rec.get("members", [])
+            projects.append(entry)
+        projects.sort(key=lambda p: p["name"].lower())
+        projects.append({"slug": SANDBOX, "name": "Sandbox", "sandbox": True})
+        return projects
+
+    def owned_count(self, email):
+        return sum(1 for rec in self._all().values() if rec.get("owner") == email)
+
+    # --- sandboxes --------------------------------------------------------
+
+    def sandbox(self, email, handle=None):
+        """This person's sandbox, made from the starter files on first use."""
+        directory = self.store.dir.resolve() / "sandboxes" / person_dir_name(email, handle)
+        data, audio = directory / "transcripts", directory / "audio"
+        if not data.is_dir():
+            with lock_for(data):
+                if not data.is_dir():
+                    self._make_sandbox(directory)
+        return Project(SANDBOX, "Sandbox", data, audio)
+
+    def _make_sandbox(self, directory):
+        # Built under a temporary name and renamed into place, so a failure
+        # halfway never leaves a sandbox without its starter files.
+        root = ensure_private_dir(directory.parent)
+        building = Path(tempfile.mkdtemp(prefix=".new-", dir=root))
+        try:
+            for part in ("transcripts", "audio"):
+                (building / part).mkdir(mode=STATE_DIR_MODE)
+            try:
+                populate_from_starter(building / "transcripts")
+            except (OSError, ValueError, KeyError, TypeError) as e:
+                print(f"warning: sandbox starter files not copied: {e}",
+                      file=sys.stderr, flush=True)
+            os.rename(building, directory)
+        except BaseException:
+            shutil.rmtree(building, ignore_errors=True)
+            raise
 
     def add(self, slug, name, data_dir, audio_dir, *, now, protected=(),
             forbidden_inside=(), roots=None):
@@ -172,10 +305,13 @@ class Registry:
             protected=(self.store.dir, *protected),
             forbidden_inside=(self.store.dir, *forbidden_inside), roots=roots)
 
-    def create(self, slug, name, *, now):
-        """Allocate private storage for a new hosted project."""
+    def create(self, slug, name, *, now, owner=None):
+        """Allocate private storage for a new hosted project.
+
+        With an `owner`, they are its first member and manage its members;
+        a None slug is made from the name."""
         try:
-            return self._add(slug, name, now=now, storage="managed")
+            return self._add(slug, name, now=now, storage="managed", owner=owner)
         except (OSError, StateDirError) as e:
             raise ProjectError(f"Could not create project storage: {e}") from e
 
@@ -193,13 +329,18 @@ class Registry:
         return data, audio
 
     def _add(self, slug, name, data_dir=None, audio_dir=None, *, now, storage,
-             protected=(), forbidden_inside=(), roots=None):
-        if not isinstance(slug, str) or not SLUG_RE.fullmatch(slug):
+             protected=(), forbidden_inside=(), roots=None, owner=None):
+        if name is not None and not isinstance(name, str):
+            raise ProjectError("Project name must be text")
+        if slug is None and owner is not None:
+            if not (name or "").strip():
+                raise ProjectError("Give the project a name.")
+        elif not isinstance(slug, str) or not SLUG_RE.fullmatch(slug):
             raise ProjectError(
                 "Project ID must be 1–40 characters, using lowercase letters, digits or "
                 "hyphens, and start and end with a letter or digit.")
-        if name is not None and not isinstance(name, str):
-            raise ProjectError("Project name must be text")
+        elif slug in RESERVED_SLUGS:
+            raise ProjectError(f"The project ID {slug} is reserved.")
         name = (name or "").strip() or slug
         if len(name) > 120:
             raise ProjectError("project name is too long")
@@ -207,6 +348,12 @@ class Registry:
         with self.store.locked(), ExitStack() as cleanup:
             doc = self.store.read(PROJECTS_FILE, EMPTY, fresh=True)
             projects = doc.setdefault("projects", {})
+            if slug is None:
+                base = _slug_from(name)
+                slug, n = base, 1
+                while slug in projects or slug in RESERVED_SLUGS:
+                    n += 1
+                    slug = f"{base}-{n}"
             if slug in projects:
                 raise ProjectError(f"project {slug} already exists")
             if storage == "managed":
@@ -217,10 +364,12 @@ class Registry:
                 forbidden_inside=forbidden_inside, roots=roots)
             record = {"name": name, "data_dir": str(data), "audio_dir": str(audio),
                       "storage": storage, "members": [], "created": now}
+            if owner is not None:
+                record.update(owner=owner, members=[owner])
             projects[slug] = record
             self.store.write(PROJECTS_FILE, doc)
             cleanup.pop_all()
-            return record
+            return dict(record, slug=slug)
 
     def set_member(self, slug, email, member):
         def change(doc):

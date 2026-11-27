@@ -138,8 +138,8 @@ You can still edit the transcript. For playback, use the file you have.
   `make prepare AUDIO=...` command above with that recording's path.
 - For a **prepared playback file** such as `interview-01.16k.opus`, copy it
   into `md/audio/` using the filename shown in the app. If you started the
-  app with `QDA_AUDIO_DIR`, use that directory. For a hosted project, the host
-  adds the file to the project's configured audio directory.
+  app with `QDA_AUDIO_DIR`, use that directory. You can also use **Upload**
+  in the Files list, which works the same way locally and hosted.
 
 Reopen **Verify against audio** after adding the file.
 
@@ -154,7 +154,12 @@ over HTTPS with Tailscale Funnel. [Hosting guide](docs/hosting.md)
 - **Accounts.** Accounts are invite-only. You send each person a one-time
   link, and they choose a password.
 - **Projects.** Each study is a separate project, and people see only the
-  projects you add them to.
+  projects they've been added to. Anyone signed in can create a project and
+  add people who already have accounts.
+- **Sandbox.** Everyone has a private sandbox that starts with a made-up,
+  partly coded practice interview.
+- **Uploads.** Members add transcripts (`.txt`, `.md`, `.tx.json`) and audio
+  from the Files list. Uploads never replace an existing file.
 - **Edit history.** Transcript corrections and codings record the signed-in
   person's handle and the time.
 - **Coding at the same time.** The server merges codebook edits by code.

@@ -10,7 +10,12 @@
 <div id="sidebar">
   <div id="session-bar" class="sidebar-section" hidden></div>
   <div id="files-panel" class="sidebar-section">
-    <h3>Files</h3>
+    <div id="files-header">
+      <h3>Files</h3>
+      <button id="upload-btn" type="button" title="Add transcripts (.txt, .md, .tx.json) or audio (.opus, .ogg, .m4a, .mp3, .wav)">Upload</button>
+      <input id="upload-input" type="file" multiple hidden accept=".txt,.md,.json,.opus,.ogg,.m4a,.mp3,.wav">
+    </div>
+    <div id="upload-status" role="status" hidden></div>
     <div id="file-list"></div>
   </div>
   <div id="files-resize-handle" role="separator" aria-label="Resize Files pane" aria-orientation="horizontal" aria-controls="files-panel codes-panel" tabindex="0" title="Drag to resize Files; use arrow keys when focused. Double-click to reset."></div>

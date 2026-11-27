@@ -934,7 +934,7 @@ export function renderFiles(files, onFileSelect) {
   const scrollTop = dom.fileList.scrollTop;
   dom.fileList.innerHTML = '';
   if (files.length === 0) {
-    dom.fileList.innerHTML = '<div style="color:#aaa;font-size:12px;padding:4px 8px">No .md files in md/</div>';
+    dom.fileList.innerHTML = '<div style="color:#aaa;font-size:12px;padding:4px 8px">No transcripts yet. Use Upload to add .txt, .md or .tx.json files.</div>';
     return;
   }
 

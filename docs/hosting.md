@@ -4,7 +4,9 @@ Collaborators can use code-qda in a browser without installing anything.
 This machine runs it, and [Tailscale Funnel](https://tailscale.com/kb/1223/funnel)
 publishes it at an HTTPS address. Nobody can create an account: you invite
 people by email. Each study is a separate **project** with its own transcripts,
-codebook and audio, and a person sees only the projects you add them to.
+codebook and audio, and a person sees only the projects they've been added to.
+Anyone signed in can create a project and add people who already have
+accounts. Everyone also has a private **Sandbox** to practice in.
 
 This guide covers setup, day-to-day administration, and what hosting does and
 does not protect.
@@ -17,6 +19,8 @@ browser ──HTTPS──▶ Tailscale Funnel (TLS ends here, on this machine)
                        ▼
                  python3 app.py --hosted
                    ├─ state (accounts, sessions, projects)  ~/.local/share/code-qda/   0700
+                   │    ├─ projects/<id>-…/     projects created in the app
+                   │    └─ sandboxes/<handle>/  each person's private sandbox
                    └─ projects
                         robotics → md/ (transcripts, codes)  +  md/audio/ (IRB audio)
 ```
@@ -232,6 +236,51 @@ overlap with registered project folders.
 python3 app.py admin project add study2 --name "Study 2" --data /abs/path/study2/md --audio /abs/path/study2/audio
 ```
 
+## Projects people create and share
+
+Anyone signed in can create a project from their **Your projects** page. The
+app gives it managed storage, as above, and makes them its **owner**. Under
+**Members**, the owner adds people by email and removes them. Only people who
+already have an account can be added. To bring in someone new, an admin
+invites them first. The owner can't be removed from their own project, and
+each person can own at most 20 projects (admins aren't limited). Admins see
+every project on the Admin page, with who created it, and can change any
+project's members there.
+
+## The sandbox
+
+Every account has a **Sandbox** at `/p/sandbox/`. It is a private project
+only that person can see; nobody else, including admins in the app, can open
+it. It starts as a copy of the files in the repository's
+[`starter/`](../starter/) folder: a short, made-up practice interview with a
+small codebook and a few coded passages. People can code, correct and upload
+there without affecting anyone. The copy is made the first time someone opens
+their sandbox and lives in `<state-directory>/sandboxes/<handle>/`. The
+starter interview has no audio.
+
+To change what new sandboxes start with, edit `starter/`: a `.tx.json` (the
+app renders its `.md`), an optional `.annot.json` of codings beside it, and
+`codes.json`. Existing sandboxes keep what they have.
+
+## Uploading transcripts and audio
+
+Every project, sandbox included, has **Upload** at the top of its Files list.
+Any member can add:
+
+- **Transcripts:** `.txt` or `.md` (stored as `.md`), or a `.tx.json` from
+  the transcription pipeline, which the app renders to `.md`. The limit is
+  32 MB per file.
+- **Audio:** `.opus`, `.ogg`, `.m4a`, `.mp3` or `.wav`, up to 1 GB per file.
+  It plays with a `.tx.json` whose `audio` field names that file. A plain
+  `.txt` or `.md` transcript has no timings, so audio can't attach to it.
+
+An upload never replaces a file. If a transcript or audio file with that name
+exists, the app refuses and says so. Rename the file and upload it again.
+Uploads go to the project's own folders on this machine and are written
+readable only by you, the account running the app. An upload is refused if it
+would leave less than 2 GB free on that disk. Each upload is a `write` in the
+audit log.
+
 ## Running it
 
 | Task | Command |
@@ -281,8 +330,9 @@ Hosted mode is designed for these threats:
   *signing in* by failing on purpose. People who are already signed in stay
   signed in (sessions last up to 30 days).
 - **Other websites acting through a signed-in browser (CSRF).** Every
-  state-changing request must carry this site's `Origin` and a JSON body. The
-  cookie is `SameSite=Lax`, `HttpOnly`, `Secure` and `__Host-` prefixed.
+  state-changing request must carry this site's `Origin`, and all but uploads
+  a JSON body. The cookie is `SameSite=Lax`, `HttpOnly`, `Secure` and
+  `__Host-` prefixed.
 - **Injected markup or script.** A strict Content-Security-Policy (no inline
   script) and server-side validation of code colors and ids keep one account
   from injecting markup into another's view.
@@ -291,6 +341,9 @@ Hosted mode is designed for these threats:
   project's directories.
 - **Slow-request exhaustion.** Connections are capped, idle ones close after
   30 seconds, and a request body must arrive within 20 seconds in total.
+  Uploads get 20 seconds plus enough time to arrive at 64 KB/s, and their
+  size limit applies only after the sender is signed in and a member. Until
+  then the server reads none of the body.
 - **Misconfiguration.** Local mode (`python3 app.py`) has no login, so it
   answers only `localhost` and refuses any request that came through a proxy.
   Pointing Funnel at it by mistake fails closed.
@@ -307,13 +360,19 @@ These are not covered:
   and disable accounts when people leave the study.
 - **What members do with what they can see.** An editor can read and play
   everything in their projects.
+- **Who owners share with.** A project's owner decides its members. If a
+  project holds study data, its owner, not only you, is keeping membership in
+  line with the approved personnel list.
+- **Disk use.** Anyone with an account can upload, up to the per-file limits
+  and the 2 GB free-space floor. There is no per-person quota.
 
 **IRB checklist before inviting anyone:**
 
 1. Confirm the protocol allows authenticated remote access to transcripts and
    audio.
 2. Confirm it allows data at rest on this shared host.
-3. Make each project's members match the approved personnel list.
+3. Make each project's members match the approved personnel list, and tell
+   the people who create projects that this is now their job too.
 4. Keep the audit log.
 5. Disable accounts when people leave.
 

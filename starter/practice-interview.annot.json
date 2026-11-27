@@ -1,0 +1,65 @@
+[
+  {
+    "id": "starter-1",
+    "codeId": "starter-manual",
+    "text": "Eventually they go to the lab server, but honestly that part sometimes waits a week or two.",
+    "start": 495,
+    "end": 586
+  },
+  {
+    "id": "starter-2",
+    "codeId": "starter-manual",
+    "text": "Nobody's job is to do it, so it's whoever remembers.",
+    "start": 728,
+    "end": 780
+  },
+  {
+    "id": "starter-3",
+    "codeId": "starter-spreadsheet",
+    "text": "There's a shared spreadsheet.",
+    "start": 889,
+    "end": 918
+  },
+  {
+    "id": "starter-4",
+    "codeId": "starter-notebook",
+    "text": "I also keep a paper notebook in the truck, because the spreadsheet doesn't work without signal.",
+    "start": 1048,
+    "end": 1143
+  },
+  {
+    "id": "starter-5",
+    "codeId": "starter-workaround",
+    "text": "I also keep a paper notebook in the truck, because the spreadsheet doesn't work without signal.",
+    "start": 1048,
+    "end": 1143
+  },
+  {
+    "id": "starter-6",
+    "codeId": "starter-loss",
+    "text": "A card got reformatted before anyone copied it, and we lost a whole Tuesday of flights.",
+    "start": 1243,
+    "end": 1330
+  },
+  {
+    "id": "starter-7",
+    "codeId": "starter-workaround",
+    "text": "Now we tape the used cards shut until they're backed up.",
+    "start": 1331,
+    "end": 1387
+  },
+  {
+    "id": "starter-8",
+    "codeId": "starter-collab",
+    "text": "She always asks me which flights had bad light, and the answer is in my notebook, not the spreadsheet.",
+    "start": 1760,
+    "end": 1862
+  },
+  {
+    "id": "starter-9",
+    "codeId": "starter-wish",
+    "text": "I'd want the flight log and the images to live in the same place, so you could click a row and see the pictures.",
+    "start": 1989,
+    "end": 2101
+  }
+]

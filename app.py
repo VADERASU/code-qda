@@ -16,15 +16,19 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import errno
 import hashlib
 import http.server
 import json
+import math
 import os
 import re
+import shutil
 import socket
 import socketserver
 import stat
 import sys
+import tempfile
 import threading
 import time
 import traceback
@@ -56,6 +60,11 @@ AUDIO_CONTENT_TYPES = {
 }
 
 MAX_BODY = 4 * 1024 * 1024      # a whole file's annotations fit many times over
+MAX_UPLOAD = 1024 ** 3          # one uploaded audio file
+MAX_TRANSCRIPT_UPLOAD = 32 * 1024 * 1024
+UPLOAD_MIN_RATE = 64 * 1024     # bytes/second an upload must average
+DISK_RESERVE = 2 * 1024 ** 3    # uploads never leave less than this free
+MAX_SEGMENTS = 100_000
 MAX_CONNECTIONS = 64
 REQUEST_TIMEOUT = 30            # seconds per socket operation, not per request
 BODY_DEADLINE = 20              # seconds to receive a whole request body
@@ -367,6 +376,7 @@ class App:
     allowed_hosts: frozenset = frozenset()
     trust_forwarded: bool = False       # X-Forwarded-For is set by tailscaled
     max_body: int = MAX_BODY
+    max_upload: int = MAX_UPLOAD
     state_dir: Path | None = None
     roots: dict | None = None           # allowed roots for registering existing storage
 
@@ -387,7 +397,76 @@ PROJECT_ROUTES = {
     ("POST", "/api/add-code"): ("_add_code_node", True),
     ("POST", "/api/save-codes"): ("_save_shared_tree", True),
     ("POST", "/api/tx-edit"): ("_tx_edit", True),
+    ("POST", "/api/upload"): ("_upload", "stream"),   # reads its own raw body
 }
+
+UPLOAD_TYPES = ("Upload a transcript (.txt, .md or .tx.json) or audio "
+                f"({', '.join(sorted(AUDIO_CONTENT_TYPES))}).")
+
+
+def upload_kind(name):
+    """-> ("tx" | "text", stem) for a transcript, ("audio", None), or (None, None)."""
+    lower = name.lower()
+    if lower.endswith(".tx.json"):
+        return "tx", name[:-len(".tx.json")]
+    for ext in (".md", ".txt"):
+        if lower.endswith(ext):
+            return "text", name[:-len(ext)]
+    if Path(lower).suffix in AUDIO_CONTENT_TYPES:
+        return "audio", None
+    return None, None
+
+
+def looks_like_audio(suffix, head):
+    """Does the file start the way this kind of audio file does?"""
+    if suffix in (".opus", ".ogg"):
+        return head[:4] == b"OggS"
+    if suffix == ".m4a":
+        return head[4:8] == b"ftyp"
+    if suffix == ".mp3":
+        return head[:3] == b"ID3" or (len(head) > 1 and head[0] == 0xFF and head[1] & 0xE0 == 0xE0)
+    if suffix == ".wav":
+        return head[:4] == b"RIFF" and head[8:12] == b"WAVE"
+    return False
+
+
+def _number(value):
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value) and value >= 0)
+
+
+def tx_problem(tx):
+    """Why an uploaded .tx.json can't be used, or None if it can."""
+    if not isinstance(tx, dict) or tx.get("version") != 1:
+        return "That isn't a version 1 .tx.json transcript."
+    segments = tx.get("segments")
+    if not isinstance(segments, list) or not segments or len(segments) > MAX_SEGMENTS:
+        return "The transcript has no segments."
+    speakers = tx.get("speakers", {})
+    if not isinstance(speakers, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in speakers.items()):
+        return "\"speakers\" must map speaker ids to names."
+    for key in ("title", "audio"):
+        if tx.get(key) is not None and not isinstance(tx[key], str):
+            return f"\"{key}\" must be text."
+    if not isinstance(tx.get("edits", []), list):
+        return "\"edits\" must be a list."
+    seen = set()
+    for n, seg in enumerate(segments, 1):
+        if not isinstance(seg, dict):
+            return f"Segment {n} isn't an object."
+        seg_id = seg.get("id")
+        if not isinstance(seg_id, str) or not ID_RE.fullmatch(seg_id) or seg_id in seen:
+            return f"Segment {n} needs a unique id (letters, digits, - or _)."
+        seen.add(seg_id)
+        if not (_number(seg.get("start")) and _number(seg.get("end"))):
+            return f"Segment {seg_id} needs start and end times in seconds."
+        if not isinstance(seg.get("text", ""), str) or not isinstance(seg.get("speaker", ""), str):
+            return f"Segment {seg_id}'s text and speaker must be text."
+        words = seg.get("words", [])
+        if not isinstance(words, list) or not all(isinstance(w, dict) for w in words):
+            return f"Segment {seg_id}'s words must be a list of objects."
+    return None
 
 
 class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
@@ -590,7 +669,10 @@ class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
         if self.command != "POST" and self._body_length:
             self._status(400)
             return False
-        if self._body_length > app.max_body:
+        limit = app.max_body
+        if self.command == "POST" and urllib.parse.urlsplit(self.path).path.endswith("/api/upload"):
+            limit = app.max_upload   # still refused unread unless signed in and a member
+        if self._body_length > limit:
             self._status(413)
             return False
 
@@ -649,15 +731,23 @@ class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
             return None
         return data
 
-    def _read_body_bytes(self, length):
-        """Read exactly `length` body bytes within BODY_DEADLINE in total.
+    def _read_body_bytes(self, length, seconds=None):
+        """Read exactly `length` body bytes within `seconds` (default
+        BODY_DEADLINE) in total.
 
         The socket timeout bounds each read, not the whole body: a client
         trickling one byte at a time would otherwise hold a connection slot
         forever, and enough of them would lock everyone out.
         """
-        deadline = time.monotonic() + BODY_DEADLINE
-        chunks, remaining = [], length
+        chunks = []
+        self._read_body_into(chunks.append, length,
+                             BODY_DEADLINE if seconds is None else seconds)
+        return b"".join(chunks)
+
+    def _read_body_into(self, sink, length, seconds):
+        """Pass the body to `sink` in chunks, as it arrives (see above)."""
+        deadline = time.monotonic() + seconds
+        remaining = length
         try:
             while remaining:
                 left = deadline - time.monotonic()
@@ -667,14 +757,14 @@ class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
                 chunk = self.rfile.read1(min(remaining, 64 * 1024))
                 if not chunk:
                     raise ConnectionResetError("request body cut short")
-                chunks.append(chunk)
+                sink(chunk)
                 remaining -= len(chunk)
         except BaseException:
             self.close_connection = True
             raise
         finally:
             self.connection.settimeout(self.timeout)
-        return b"".join(chunks)
+        self._body_pending = False
 
     def _write_body(self, limit):
         if not self._origin_ok():
@@ -710,6 +800,13 @@ class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
         handler = getattr(self, method)
         if not writes:
             handler(params)
+            return
+        if writes == "stream":
+            if not self._origin_ok():
+                self._status(403)
+                return
+            handler(params)
+            self._audit_write(path, {"name": params.get("file", [None])})
             return
         body = self._write_body(self.server.app.max_body)
         if body is None:
@@ -1156,6 +1253,137 @@ class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
                     self.close_connection = True
                     return
                 remaining -= len(block)
+
+    # --- uploads --------------------------------------------------------
+    #
+    # One file per request, its bytes as the body and its name in ?file=.
+    # Nothing is ever replaced: an upload that would overwrite a transcript
+    # (and so orphan its codings) or an audio file is refused with 409.
+
+    def _upload_error(self, status, message):
+        self._json({"error": message}, status=status)
+
+    def _upload(self, params):
+        name = safe_name(params.get("file", [""])[0])
+        if name is None or len(name) > 200:
+            self._upload_error(400, "Choose a file with a name.")
+            return
+        kind, stem = upload_kind(name)
+        if kind is None:
+            self._upload_error(415, UPLOAD_TYPES)
+            return
+        if not self._body_length:
+            self._upload_error(400, f"{name} is empty.")
+            return
+        if kind == "audio":
+            self._upload_audio(name)
+        else:
+            self._upload_transcript(name, kind, stem)
+
+    def _upload_seconds(self):
+        return BODY_DEADLINE + self._body_length / UPLOAD_MIN_RATE
+
+    def _upload_transcript(self, name, kind, stem):
+        if self._body_length > MAX_TRANSCRIPT_UPLOAD:
+            self._upload_error(413, "Transcripts can be at most 32 MB.")
+            return
+        if not stem.strip() or stem != stem.strip():
+            self._upload_error(400, "Give the file a name that doesn't start or end with a space.")
+            return
+        raw = self._read_body_bytes(self._body_length, self._upload_seconds())
+        try:
+            text = raw.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            self._upload_error(400, f"{name} isn't UTF-8 text.")
+            return
+        tx = None
+        if kind == "tx":
+            try:
+                tx = json.loads(text)
+            except ValueError:
+                self._upload_error(400, f"{name} isn't valid JSON.")
+                return
+            problem = tx_problem(tx)
+            if problem:
+                self._upload_error(400, f"{name}: {problem}")
+                return
+            tx.pop("audioAvailable", None)       # added by /api/tx, not stored
+            for seg in tx["segments"]:
+                seg.pop("span", None)
+            if not tx.get("title"):
+                tx["title"] = stem
+            md, _spans = txfmt.render_md(tx)
+        else:
+            md = text.replace("\r\n", "\n").replace("\r", "\n")
+            if "\x00" in md or not md.strip():
+                self._upload_error(400, f"{name} is empty or isn't text.")
+                return
+        if len(md) > MAX_TEXT_LENGTH:
+            self._upload_error(413, f"{name} is too long for one transcript.")
+            return
+        md_dir = self.project.md_dir
+        paths = [md_dir / (stem + suffix) for suffix in (".md", ".tx.json", ".annot.json")]
+        with self.project.lock:
+            if any(os.path.lexists(p) for p in paths):
+                self._upload_error(409, f"There's already a transcript named {stem}.md. "
+                                        f"Rename the file to upload it as well.")
+                return
+            if tx is not None:   # as txfmt.save writes it, but private
+                txfmt.write_text_atomic(paths[1], json.dumps(tx, indent=1, ensure_ascii=False),
+                                        mode=0o600)
+            txfmt.write_text_atomic(paths[0], md, mode=0o600)
+        self._json({"ok": True, "kind": "transcript", "name": stem + ".md"})
+
+    def _upload_audio(self, name):
+        audio_dir = self.project.audio_dir
+        final = audio_dir / name
+        taken = f"There's already an audio file named {name}."
+        if os.path.lexists(final):
+            self._upload_error(409, taken)
+            return
+        try:
+            free = shutil.disk_usage(audio_dir).free
+        except OSError:
+            free = None
+        if free is not None and free - self._body_length < DISK_RESERVE:
+            self._upload_error(507, "The server is too low on disk space for this file.")
+            return
+        fd, tmp = tempfile.mkstemp(dir=audio_dir, prefix=".upload-", suffix=".part")
+        head = bytearray()
+
+        def sink(chunk):
+            if len(head) < 16:
+                head.extend(chunk[:16 - len(head)])
+            fh.write(chunk)
+
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                try:
+                    self._read_body_into(sink, self._body_length, self._upload_seconds())
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                except OSError as e:
+                    if e.errno not in (errno.ENOSPC, errno.EDQUOT):
+                        raise
+                    self.close_connection = True
+                    self._upload_error(507, "The server ran out of disk space.")
+                    return
+            if not looks_like_audio(final.suffix.lower(), bytes(head)):
+                self._upload_error(400, f"{name} doesn't look like a {final.suffix} audio file.")
+                return
+            with self.project.lock:
+                if os.path.lexists(final):
+                    self._upload_error(409, taken)
+                    return
+                os.replace(tmp, final)
+                tmp = None
+        finally:
+            if tmp is not None:
+                try:
+                    os.unlink(tmp)
+                except FileNotFoundError:
+                    pass
+        self._json({"ok": True, "kind": "audio", "name": name})
 
     def _load_shared_tree(self):
         if not self.project.codes_file.exists():

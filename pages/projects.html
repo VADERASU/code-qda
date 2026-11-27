@@ -7,14 +7,23 @@
 <link rel="stylesheet" href="/static/auth.css">
 </head>
 <body data-page="projects">
-<main class="card">
+<main class="card medium">
   <div class="topline">
     <p class="wordmark">code-qda</p>
     <p class="muted"><span id="who"></span> · <a id="admin-link" href="/admin" hidden>Admin</a> <button type="button" id="signout">Sign out</button></p>
   </div>
   <h1>Your projects</h1>
   <ul id="projects" class="projects"></ul>
-  <p id="empty" class="lede" hidden>You haven't been added to a project yet. Ask the person who invited you to add you.</p>
+  <p id="error" class="error" role="alert" hidden></p>
+  <p id="status" class="notice" role="status" hidden></p>
+
+  <h2>New project</h2>
+  <p class="muted">You'll own it and can add people who already have an account here. Everyone in a project can upload transcripts and audio and code them together.</p>
+  <form id="create-form">
+    <label for="project-name">Name</label>
+    <input id="project-name" name="name" type="text" maxlength="120" required autocomplete="off">
+    <button class="primary inline" type="submit">Create project</button>
+  </form>
 </main>
 <script type="module" src="/static/projects.js"></script>
 </body>

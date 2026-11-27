@@ -78,7 +78,8 @@ class SignIn(unittest.TestCase):
                                       "Max-Age=2592000"})
         self.assertNotIn("Domain", cookie)
         me = self.client.get("/auth/me").json()
-        self.assertEqual(me["projects"], [{"slug": "beta", "name": "Beta study"}])
+        self.assertEqual(me["projects"], [{"slug": "beta", "name": "Beta study", "owned": False},
+                                          {"slug": "sandbox", "name": "Sandbox", "sandbox": True}])
 
     def test_wrong_password_and_throttle(self):
         for _ in range(5):
@@ -157,8 +158,9 @@ class Isolation(unittest.TestCase):
         self.assertEqual(bob.get("/api/files").status, 404)
         resp = bob.get("/p/beta")
         self.assertEqual((resp.status, resp.header("Location")), (308, "/p/beta/"))
-        resp = bob.get("/")
-        self.assertEqual((resp.status, resp.header("Location")), (303, "/p/beta/"))
+        resp = bob.get("/")  # always the project list: their projects and their sandbox
+        self.assertEqual(resp.status, 200)
+        self.assertIn(b"Your projects", resp.body)
 
     def test_membership_changes_apply_immediately(self):
         bob = signed_in(self.env, "bob@example.edu")

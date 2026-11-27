@@ -186,7 +186,8 @@ def cmd_list(args, store):
     print("\nprojects:")
     records = Registry(store).records()
     for slug, rec in sorted(records.items()):
-        print(f"  {slug}: {rec.get('name')}\n    data  {rec['data_dir']}\n    audio {rec['audio_dir']}")
+        owner = f"  (created by {rec['owner']})" if rec.get("owner") else ""
+        print(f"  {slug}: {rec.get('name')}{owner}\n    data  {rec['data_dir']}\n    audio {rec['audio_dir']}")
         print(f"    members: {', '.join(rec.get('members', [])) or '(none)'}")
     if not records:
         print("  (none)")

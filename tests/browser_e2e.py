@@ -404,7 +404,9 @@ class E2E(unittest.TestCase):
             f.password.value = 'a perfectly fine passphrase';
             f.confirm.value = 'a perfectly fine passphrase'; f.requestSubmit(); })()""")
         b.wait_for("location.pathname === '/'")
-        b.wait_for("!document.getElementById('empty').hidden")  # no projects yet
+        # No projects yet, but everyone has a sandbox.
+        b.wait_for("document.getElementById('projects').textContent.includes('Sandbox')")
+        self.assertEqual(b.js("document.querySelectorAll('#projects li').length"), 1)
         b.js("document.getElementById('signout').click()")
         b.wait_for("location.pathname === '/login'")
 
@@ -413,7 +415,7 @@ class E2E(unittest.TestCase):
             f.password.value = {json.dumps(env['passwords']['alice@example.edu'])};
             f.requestSubmit(); }})()""")
         b.wait_for("location.pathname === '/'")
-        b.wait_for("document.querySelectorAll('#projects li').length === 1")
+        b.wait_for("document.querySelectorAll('#projects li').length === 2")  # alpha, sandbox
         b.go(f"{origin}/admin")
         b.wait_for("document.querySelectorAll('#users tr').length === 4")
         b.js("""(() => { document.getElementById('invite-email').value = 'frank@example.edu';
@@ -445,6 +447,60 @@ class E2E(unittest.TestCase):
             form.requestSubmit(); }})()""")
         b.wait_for("document.getElementById('project-status').textContent.includes('Project registered')")
         self.assertEqual(env["registry"].records()["existing-study"]["data_dir"], str(data.resolve()))
+
+
+    def test_sandbox_upload_and_sharing(self):
+        b = self.browser
+        env = support.hosted_setup(self)
+        port = env["server"].port
+        origin = f"http://localhost:{port}"
+        env["app"].public_origin = origin
+        env["app"].allowed_hosts = frozenset({f"localhost:{port}"})
+        b.go(f"{origin}/login")
+        b.js(f"""(() => {{ const f = document.getElementById('login-form');
+            f.email.value = 'bob@example.edu';
+            f.password.value = {json.dumps(env['passwords']['bob@example.edu'])};
+            f.requestSubmit(); }})()""")
+        b.wait_for("location.pathname === '/'")
+        b.wait_for("document.querySelectorAll('#projects li').length === 2")  # beta, sandbox
+
+        # The sandbox opens on the starter interview, already partly coded.
+        b.go(f"{origin}/p/sandbox/?file=practice-interview.md")
+        b.wait_for("document.querySelectorAll('#text-display .coded').length >= 5")
+        b.wait_for("!!document.querySelector('#session-bar .session-note')")
+        self.assertIn("Tools", b.js("document.getElementById('code-list').textContent"))
+
+        # Upload through the real file picker.
+        upload_dir = support.temp_dir(self)
+        (upload_dir / "my notes.txt").write_text("Q: How was it?\nA: Fine.\n")
+        doc = b.call("DOM.getDocument")["root"]["nodeId"]
+        node = b.call("DOM.querySelector", nodeId=doc, selector="#upload-input")["nodeId"]
+        b.call("DOM.setFileInputFiles", nodeId=node, files=[str(upload_dir / "my notes.txt")])
+        b.wait_for("document.getElementById('upload-status').textContent.includes('Added my notes.md')")
+        b.wait_for("[...document.querySelectorAll('.file-item')].length === 2")
+        b.wait_for("document.getElementById('text-display').textContent.includes('How was it?')")
+        self.assertTrue((env["state"] / "sandboxes" / "bob" / "transcripts" / "my notes.md").exists())
+        # A second try is refused, and says why.
+        self.expected.add((409, "/p/sandbox/api/upload?file=my%20notes.txt"))
+        b.call("DOM.setFileInputFiles", nodeId=node, files=[str(upload_dir / "my notes.txt")])
+        b.wait_for("document.getElementById('upload-status').classList.contains('error')")
+        self.assertIn("already", b.js("document.getElementById('upload-status').textContent"))
+
+        # Create a project and share it with someone who has an account.
+        b.go(f"{origin}/")
+        b.wait_for("document.querySelectorAll('#projects li').length === 2")
+        b.js("""(() => { const f = document.getElementById('create-form');
+            f.elements.name.value = 'Pilot study'; f.requestSubmit(); })()""")
+        b.wait_for("document.getElementById('status').textContent.includes('Created Pilot study')")
+        self.assertEqual(env["registry"].records()["pilot-study"]["owner"], "bob@example.edu")
+        add = """(email => { const form = document.querySelector('.project-members .add-member');
+            form.querySelector('input').value = email; form.requestSubmit(); })"""
+        self.expected.add((400, "/projects/api/members"))
+        b.js(f"{add}('stranger@example.edu')")
+        b.wait_for("document.getElementById('error').textContent.includes('ask an admin')")
+        b.js(f"{add}('carol@example.edu')")
+        b.wait_for("document.querySelector('.project-members summary').textContent === 'Members (2)'")
+        self.assertIn("carol@example.edu", env["registry"].records()["pilot-study"]["members"])
 
 
 if __name__ == "__main__":

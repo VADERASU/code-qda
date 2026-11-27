@@ -1,6 +1,7 @@
 import {apiFetch, apiPost} from './api.js';
 import {initReading} from './reading.js';
 import {initSession} from './session.js';
+import {initUpload} from './upload.js';
 import {toTop} from './place.js';
 import {closeVerify, initVerify, isVerifying, openVerify} from './verify.js';
 import {
@@ -940,6 +941,10 @@ async function pruneEmptyCodes() {
 
 async function init() {
   initSession();
+  initUpload({onUploaded: async transcripts => {
+    await loadFiles();
+    if (transcripts.length === 1) await loadFile(transcripts[0]);
+  }});
   const results = await Promise.allSettled([loadFiles(), loadOverview()]);
   if (results.some(result => result.status === 'rejected')) {
     showSaveStatus('load failed', true);

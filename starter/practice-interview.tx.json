@@ -1,0 +1,193 @@
+{
+ "version": 1,
+ "title": "Practice interview (made up)",
+ "audio": null,
+ "duration": 159.66,
+ "speakers": {
+  "SPEAKER_00": "INTERVIEWER",
+  "SPEAKER_01": "PARTICIPANT"
+ },
+ "segments": [
+  {
+   "id": "s0001",
+   "speaker": "SPEAKER_00",
+   "start": 3.0,
+   "end": 11.6,
+   "text": "Thanks for doing this. To start, can you walk me through what a normal field day looks like for you?",
+   "orig": "Thanks for doing this. To start, can you walk me through what a normal field day looks like for you?",
+   "words": [],
+   "status": "unreviewed"
+  },
+  {
+   "id": "s0002",
+   "speaker": "SPEAKER_01",
+   "start": 12.4,
+   "end": 24.42,
+   "text": "Sure. We fly the drone over the same three plots every week, so most of the day is setting up, flying, and then copying the images off the cards.",
+   "orig": "Sure. We fly the drone over the same three plots every week, so most of the day is setting up, flying, and then copying the images off the cards.",
+   "words": [],
+   "status": "unreviewed"
+  },
+  {
+   "id": "s0003",
+   "speaker": "SPEAKER_00",
+   "start": 25.22,
+   "end": 30.02,
+   "text": "Where do the images go once they're off the cards?",
+   "orig": "Where do the images go once they're off the cards?",
+   "words": [],
+   "status": "unreviewed"
+  },
+  {
+   "id": "s0004",
+   "speaker": "SPEAKER_01",
+   "start": 30.82,
+   "end": 42.08,
+   "text": "Onto a laptop first, and then onto an external drive. Eventually they go to the lab server, but honestly that part sometimes waits a week or two.",
+   "orig": "Onto a laptop first, and then onto an external drive. Eventually they go to the lab server, but honestly that part sometimes waits a week or two.",
+   "words": [],
+   "status": "unreviewed"
+  },
+  {
+   "id": "s0005",
+   "speaker": "SPEAKER_00",
+   "start": 42.88,
+   "end": 45.4,
+   "text": "Why does it wait?",
+   "orig": "Why does it wait?",
+   "words": [],
+   "status": "unreviewed"
+  },
+  {
+   "id": "s0006",
+   "speaker": "SPEAKER_01",
+   "start": 46.2,
+   "end": 55.94,
+   "text": "The upload is slow from the field station, and it's a manual step. Nobody's job is to do it, so it's whoever remembers.",
+   "orig": "The upload is slow from the field station, and it's a manual step. Nobody's job is to do it, so it's whoever remembers.",
+   "words": [],
+   "status": "unreviewed"
+  },
+  {
+   "id": "s0007",
+   "speaker": "SPEAKER_00",
+   "start": 56.74,
+   "end": 61.54,
+   "text": "How do you keep track of which flights you've done?",
+   "orig": "How do you keep track of which flights you've done?",
+   "words": [],
+   "status": "unreviewed"
+  },
+  {
+   "id": "s0008",
+   "speaker": "SPEAKER_01",
+   "start": 62.34,
+   "end": 75.12,
+   "text": "There's a shared spreadsheet. Each row is a flight: the date, the plot, the battery we used, the weather, and a notes column that turns into a bit of a diary.",
+   "orig": "There's a shared spreadsheet. Each row is a flight: the date, the plot, the battery we used, the weather, and a notes column that turns into a bit of a diary.",
+   "words": [],
+   "status": "unreviewed"
+  },
+  {
+   "id": "s0009",
+   "speaker": "SPEAKER_01",
+   "start": 75.92,
+   "end": 83.0,
+   "text": "I also keep a paper notebook in the truck, because the spreadsheet doesn't work without signal.",
+   "orig": "I also keep a paper notebook in the truck, because the spreadsheet doesn't work without signal.",
+   "words": [],
+   "status": "unreviewed"
+  },
+  {
+   "id": "s0010",
+   "speaker": "SPEAKER_00",
+   "start": 83.8,
+   "end": 86.7,
+   "text": "Has anything ever gone missing?",
+   "orig": "Has anything ever gone missing?",
+   "words": [],
+   "status": "unreviewed"
+  },
+  {
+   "id": "s0011",
+   "speaker": "SPEAKER_01",
+   "start": 87.5,
+   "end": 99.52,
+   "text": "Once, yes. A card got reformatted before anyone copied it, and we lost a whole Tuesday of flights. Now we tape the used cards shut until they're backed up.",
+   "orig": "Once, yes. A card got reformatted before anyone copied it, and we lost a whole Tuesday of flights. Now we tape the used cards shut until they're backed up.",
+   "words": [],
+   "status": "unreviewed"
+  },
+  {
+   "id": "s0012",
+   "speaker": "SPEAKER_00",
+   "start": 100.32,
+   "end": 102.84,
+   "text": "That's a clever fix.",
+   "orig": "That's a clever fix.",
+   "words": [],
+   "status": "unreviewed"
+  },
+  {
+   "id": "s0013",
+   "speaker": "SPEAKER_01",
+   "start": 103.64,
+   "end": 112.24,
+   "text": "It's a piece of tape. But it works better than the rule we had before, which was just \"be careful.\"",
+   "orig": "It's a piece of tape. But it works better than the rule we had before, which was just \"be careful.\"",
+   "words": [],
+   "status": "unreviewed"
+  },
+  {
+   "id": "s0014",
+   "speaker": "SPEAKER_00",
+   "start": 113.04,
+   "end": 117.46,
+   "text": "Who else uses the data after you collect it?",
+   "orig": "Who else uses the data after you collect it?",
+   "words": [],
+   "status": "unreviewed"
+  },
+  {
+   "id": "s0015",
+   "speaker": "SPEAKER_01",
+   "start": 118.26,
+   "end": 132.56,
+   "text": "My advisor looks at the summaries, and a postdoc runs the plant-counting model on the images. She always asks me which flights had bad light, and the answer is in my notebook, not the spreadsheet.",
+   "orig": "My advisor looks at the summaries, and a postdoc runs the plant-counting model on the images. She always asks me which flights had bad light, and the answer is in my notebook, not the spreadsheet.",
+   "words": [],
+   "status": "unreviewed"
+  },
+  {
+   "id": "s0016",
+   "speaker": "SPEAKER_00",
+   "start": 133.36,
+   "end": 139.68,
+   "text": "If you could change one thing about how this works, what would it be?",
+   "orig": "If you could change one thing about how this works, what would it be?",
+   "words": [],
+   "status": "unreviewed"
+  },
+  {
+   "id": "s0017",
+   "speaker": "SPEAKER_01",
+   "start": 140.48,
+   "end": 155.16,
+   "text": "I'd want the flight log and the images to live in the same place, so you could click a row and see the pictures. Right now they're connected only by the date in the folder name.",
+   "orig": "I'd want the flight log and the images to live in the same place, so you could click a row and see the pictures. Right now they're connected only by the date in the folder name.",
+   "words": [],
+   "status": "unreviewed"
+  },
+  {
+   "id": "s0018",
+   "speaker": "SPEAKER_00",
+   "start": 155.96,
+   "end": 158.86,
+   "text": "That's really helpful. Thank you.",
+   "orig": "That's really helpful. Thank you.",
+   "words": [],
+   "status": "unreviewed"
+  }
+ ],
+ "edits": []
+}

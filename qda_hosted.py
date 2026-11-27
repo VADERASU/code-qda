@@ -7,6 +7,9 @@ the order of checks is the security model, so it reads top to bottom:
     public routes    /static/*, /login, /invite, the three /auth POSTs
     session          from the __Host-qda_session cookie, or 401 / redirect
     authorization    /admin* for admins only; /p/<slug>/* for members only
+                     (/p/sandbox/ is always the signed-in person's own);
+                     /projects/api/* changes membership only for a project's
+                     owner (or an admin)
     route            the project's data API (app.PROJECT_ROUTES)
 
 A project that does not exist and a project the user is not a member of
@@ -34,6 +37,10 @@ AUTH_POSTS = {
     "/auth/invite/accept": "_invite_accept",
     "/auth/logout": "_logout",
 }
+PROJECT_POSTS = {
+    "/projects/api/create": "_create_own_project",
+    "/projects/api/members": "_own_project_members",
+}
 ADMIN_POSTS = {
     "/admin/api/invite": "_admin_invite",
     "/admin/api/reset": "_admin_reset",
@@ -49,6 +56,8 @@ BAD_LOGIN = "That email and password don't match an account."
 BAD_LINK = "This link is invalid, expired, or already used."
 THROTTLED = "Too many attempts. Wait 15 minutes and try again."
 BUSY = "The server is busy. Try again in a moment."
+NO_ACCOUNT = ("There's no account for {email}. Only people with accounts can be added; "
+              "ask an admin to invite them.")
 
 
 def safe_next(value):
@@ -125,6 +134,9 @@ class HostedMixin:
         if path == "/" and cmd == "GET":
             self._home()
             return
+        if cmd == "POST" and path in PROJECT_POSTS:
+            self._projects_post(path)
+            return
         if path == "/admin" or path.startswith("/admin/"):
             if not self.user.get("admin"):
                 self._status(404)
@@ -133,7 +145,8 @@ class HostedMixin:
             return
         match = PROJECT_PATH.fullmatch(path)
         if match:
-            project = app.registry.for_member(match.group(1), self.user["email"])
+            project = app.registry.for_member(match.group(1), self.user["email"],
+                                              self.user.get("handle"))
             if project is None:
                 self._status(404)
                 return
@@ -159,11 +172,65 @@ class HostedMixin:
                 "projects": app.registry.projects_for(self.user["email"])}
 
     def _home(self):
-        projects = self.server.app.registry.projects_for(self.user["email"])
-        if len(projects) == 1 and not self.user.get("admin"):
-            self._redirect(303, f"/p/{projects[0]['slug']}/")
-        else:
-            self._serve_page("projects.html")
+        self._serve_page("projects.html")
+
+    # --- projects people create and share themselves ------------------------
+
+    def _projects_post(self, path):
+        from qda_auth import AuthError
+        from qda_projects import ProjectError
+        body = self._write_body(MAX_AUTH_BODY)
+        if body is None:
+            return
+        try:
+            result = getattr(self, PROJECT_POSTS[path])(body)
+        except (AuthError, ProjectError) as e:
+            self._json({"error": str(e)}, status=400)
+            return
+        if result is None:
+            self._status(404)
+            return
+        me = self._me()
+        me.update(result)
+        self._json(me)
+
+    def _create_own_project(self, body):
+        from qda_projects import MAX_OWNED_PROJECTS, ProjectError
+        app = self.server.app
+        email = self.user["email"]
+        if (not self.user.get("admin")
+                and app.registry.owned_count(email) >= MAX_OWNED_PROJECTS):
+            raise ProjectError(f"You can own at most {MAX_OWNED_PROJECTS} projects.")
+        rec = app.registry.create(None, body.get("name"), now=time.time(), owner=email)
+        self._audit_project(rec["slug"], rec)
+        return {"created": rec["slug"]}
+
+    def _own_project_members(self, body):
+        """Add or remove a member, for the project's owner (or an admin).
+
+        Anyone else gets the same 404 as for a project that doesn't exist.
+        Only existing accounts can be added: owners share projects, admins
+        create accounts."""
+        from qda_auth import AuthError
+        app = self.server.app
+        me = self.user["email"]
+        slug = body.get("slug")
+        rec = app.registry.records().get(slug) if isinstance(slug, str) else None
+        if rec is None:
+            return None
+        owner = rec.get("owner")
+        if not self.user.get("admin") and not (owner == me and me in rec.get("members", ())):
+            return None
+        email = self._admin_email(body)
+        member = body.get("member") is True
+        if member and app.auth.get_user(email) is None:
+            raise AuthError(NO_ACCOUNT.format(email=email))
+        if not member and email == owner:
+            raise AuthError("The project's owner can't be removed.")
+        app.registry.set_member(slug, email, member)
+        app.auth.audit("member_added" if member else "member_removed",
+                       project=slug, email=email, by=me)
+        return {}
 
     def _audit_write(self, route, params):
         app = self.server.app
@@ -306,7 +373,7 @@ class HostedMixin:
         state["projects"] = [
             {"slug": slug, "name": rec.get("name") or slug, "dataDir": rec["data_dir"],
              "audioDir": rec["audio_dir"], "storage": rec.get("storage", "registered"),
-             "members": rec.get("members", [])}
+             "owner": rec.get("owner"), "members": rec.get("members", [])}
             for slug, rec in sorted(app.registry.records().items())]
         state["roots"] = app.roots or {"data": [], "audio": []}
         state["me"] = self.user["email"]

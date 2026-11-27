@@ -1,0 +1,58 @@
+[
+  {
+    "id": "starter-tools",
+    "name": "Tools",
+    "parentId": null,
+    "order": 0,
+    "color": "#1a73e8"
+  },
+  {
+    "id": "starter-spreadsheet",
+    "name": "Shared spreadsheet",
+    "parentId": "starter-tools",
+    "order": 0,
+    "color": null
+  },
+  {
+    "id": "starter-notebook",
+    "name": "Paper notebook",
+    "parentId": "starter-tools",
+    "order": 1,
+    "color": null
+  },
+  {
+    "id": "starter-manual",
+    "name": "Manual steps",
+    "parentId": null,
+    "order": 1,
+    "color": "#e37400"
+  },
+  {
+    "id": "starter-loss",
+    "name": "Data loss",
+    "parentId": null,
+    "order": 2,
+    "color": "#d93025"
+  },
+  {
+    "id": "starter-workaround",
+    "name": "Workarounds",
+    "parentId": null,
+    "order": 3,
+    "color": "#188038"
+  },
+  {
+    "id": "starter-collab",
+    "name": "Collaboration",
+    "parentId": null,
+    "order": 4,
+    "color": "#9334e6"
+  },
+  {
+    "id": "starter-wish",
+    "name": "Wish list",
+    "parentId": null,
+    "order": 5,
+    "color": "#00897b"
+  }
+]

@@ -26,8 +26,10 @@ export async function initSession() {
       <span class="visually-hidden">Project</span>
       <select id="session-project" aria-label="Project">${options}</select>
     </label>
+    ${current?.sandbox ? '<p class="session-note">Only you can see your sandbox.</p>' : ''}
     <div class="session-who">
       <span title="${esc(me.email)}">${esc(me.handle || me.email)}</span>
+      <a href="/">Projects</a>
       ${me.admin ? '<a href="/admin">Admin</a>' : ''}
       <button type="button" id="session-signout">Sign out</button>
     </div>`;
