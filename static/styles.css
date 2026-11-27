@@ -54,20 +54,27 @@ body {
   flex-shrink: 0;
 }
 #upload-btn {
-  border: none;
-  background: none;
+  border: 1px solid #cbd9eb;
+  border-radius: 4px;
+  background: #fff;
   cursor: pointer;
   font-size: 11px;
   color: #1a65ad;
-  padding: 0;
+  padding: 2px 7px;
 }
-#upload-btn:hover { text-decoration: underline; }
-#upload-btn:disabled { color: #999; cursor: default; text-decoration: none; }
+#upload-btn:hover:not(:disabled) { border-color: #1a73e8; }
+#upload-btn:disabled { opacity: 0.6; cursor: default; }
+.upload-empty-label { display: none; }
+#files-panel:has(#file-list:empty):has(#recordings[hidden]) #files-header { display: block; }
+#files-panel:has(#file-list:empty):has(#recordings[hidden]) #upload-btn {
+  width: 100%; padding: 5px 6px; background: #edf4ff; font-weight: 600;
+}
+#files-panel:has(#file-list:empty):has(#recordings[hidden]) .upload-empty-label { display: inline; }
 #upload-status {
   flex-shrink: 0;
   font-size: 11px;
   color: #555;
-  margin: -4px 0 6px;
+  margin: 4px 0 6px;
   overflow-wrap: anywhere;
 }
 #upload-status.error { color: #c5221f; }
@@ -81,7 +88,7 @@ body {
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
   color: #999; font-weight: 600; margin: 4px 8px;
 }
-.recordings-hint { color: #999; padding: 2px 8px; }
+.recordings-hint { color: #666; padding: 2px 8px; }
 .recording { padding: 4px 8px; border-radius: 4px; }
 .recording + .recording { margin-top: 2px; }
 .recording-name { display: block; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

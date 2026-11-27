@@ -68,8 +68,9 @@ function statusLine(recording, transcribe) {
   } else if (job?.status === 'running') {
     line.append(`${job.stage || 'Transcribing'}…`, cancel());
   } else if (job?.status === 'done') {
-    line.append('Transcribed: ', h('button', {type: 'button', class: 'link',
-      onclick: () => handlers.openFile(job.transcript)}, job.transcript));
+    line.append(h('button', {type: 'button', title: job.transcript,
+      'aria-label': `Open transcript ${job.transcript}`,
+      onclick: () => handlers.openFile(job.transcript)}, 'Open transcript'));
   } else if (picking.has(recording.name)) {
     line.append(...picker(recording, job));
   } else {
@@ -92,13 +93,8 @@ function show(data) {
   const recordings = data.recordings || [];
   const transcribe = data.transcribe || {};
   box.replaceChildren();
-  box.hidden = false;
-  if (!recordings.length) {
-    if (transcribe.local) {
-      box.hidden = true;
-    } else {
-      box.append(h('p', {class: 'recordings-hint'}, 'Upload a recording to transcribe it here.'));
-    }
+  box.hidden = recordings.length === 0;
+  if (box.hidden) {
     schedule(false);
     return;
   }

@@ -12,7 +12,7 @@
   <div id="files-panel" class="sidebar-section">
     <div id="files-header">
       <h3>Files</h3>
-      <button id="upload-btn" type="button" title="Add transcripts (.txt, .md, .tx.json) or audio (.opus, .ogg, .m4a, .mp3, .wav)">Upload</button>
+      <button id="upload-btn" type="button" title="Add transcripts (.txt, .md, .tx.json) or audio (.opus, .ogg, .m4a, .mp3, .wav)">Upload<span class="upload-empty-label"> recording or transcript</span></button>
       <input id="upload-input" type="file" multiple hidden accept=".txt,.md,.json,.opus,.ogg,.m4a,.mp3,.wav">
     </div>
     <div id="upload-status" role="status" hidden></div>
@@ -51,7 +51,7 @@
 <div id="resize-handle"></div>
 
 <div id="main">
-  <div id="empty-state">Select a file to begin coding</div>
+  <div id="empty-state">No transcript open</div>
   <div id="file-bar" hidden>
     <div id="file-bar-inner">
       <span id="file-bar-name"></span>

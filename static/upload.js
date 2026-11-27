@@ -60,11 +60,8 @@ export function initUpload({onUploaded}) {
     } finally {
       button.disabled = false;
     }
-    const audio = added.filter(item => item.kind === 'audio').length;
-    const parts = [];
-    if (added.length) parts.push(`Added ${added.map(item => item.name).join(', ')}.`);
-    if (audio) parts.push('Transcribe it under Recordings, or upload a .tx.json transcript that names it.');
-    show([...parts, ...problems].join(' '), problems.length > 0);
+    const confirmation = added.length ? `Added ${added.map(item => item.name).join(', ')}.` : '';
+    show([confirmation, ...problems].filter(Boolean).join(' '), problems.length > 0);
     if (added.length) await onUploaded(added);
   });
 }

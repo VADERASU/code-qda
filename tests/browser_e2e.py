@@ -411,8 +411,9 @@ class E2E(unittest.TestCase):
             f.confirm.value = 'a perfectly fine passphrase'; f.requestSubmit(); })()""")
         b.wait_for("location.pathname === '/'")
         # No projects yet, but everyone has a sandbox.
-        b.wait_for("document.getElementById('projects').textContent.includes('Sandbox')")
-        self.assertEqual(b.js("document.querySelectorAll('#projects li').length"), 1)
+        b.wait_for("!document.getElementById('no-projects').hidden")
+        self.assertEqual(b.js("document.querySelectorAll('#projects li').length"), 0)
+        self.assertEqual(b.js("document.getElementById('try-coding').pathname"), "/p/sandbox/")
         b.js("document.getElementById('signout').click()")
         b.wait_for("location.pathname === '/login'")
 
@@ -421,7 +422,7 @@ class E2E(unittest.TestCase):
             f.password.value = {json.dumps(env['passwords']['alice@example.edu'])};
             f.requestSubmit(); }})()""")
         b.wait_for("location.pathname === '/'")
-        b.wait_for("document.querySelectorAll('#projects li').length === 2")  # alpha, sandbox
+        b.wait_for("document.querySelectorAll('#projects li').length === 1")  # alpha
         b.go(f"{origin}/admin")
         b.wait_for("document.querySelectorAll('#users tr').length === 4")
         b.js("""(() => { document.getElementById('invite-email').value = 'frank@example.edu';
@@ -468,10 +469,11 @@ class E2E(unittest.TestCase):
             f.password.value = {json.dumps(env['passwords']['bob@example.edu'])};
             f.requestSubmit(); }})()""")
         b.wait_for("location.pathname === '/'")
-        b.wait_for("document.querySelectorAll('#projects li').length === 2")  # beta, sandbox
+        b.wait_for("document.querySelectorAll('#projects li').length === 1")  # beta
 
         # The sandbox opens on the starter interview, already partly coded.
-        b.go(f"{origin}/p/sandbox/?file=practice-interview.md")
+        b.js("document.getElementById('try-coding').click()")
+        b.wait_for("location.pathname === '/p/sandbox/' && location.search === '?file=practice-interview.md'")
         b.wait_for("document.querySelectorAll('#text-display .coded').length >= 5")
         b.wait_for("!!document.querySelector('#session-bar .session-note')")
         self.assertIn("Tools", b.js("document.getElementById('code-list').textContent"))
@@ -513,11 +515,20 @@ class E2E(unittest.TestCase):
 
         # Create a project and share it with someone who has an account.
         b.go(f"{origin}/")
-        b.wait_for("document.querySelectorAll('#projects li').length === 2")
+        b.wait_for("!document.getElementById('new-project').disabled")
+        b.js("document.getElementById('new-project').click()")
+        self.assertTrue(b.js("document.getElementById('new-project-dialog').open"))
+        self.assertEqual(b.js("document.activeElement.id"), "project-name")
+        b.js("document.getElementById('cancel-create').click()")
+        self.assertFalse(b.js("document.getElementById('new-project-dialog').open"))
+        b.js("document.getElementById('new-project').click()")
         b.js("""(() => { const f = document.getElementById('create-form');
             f.elements.name.value = 'Pilot study'; f.requestSubmit(); })()""")
         b.wait_for("document.getElementById('status').textContent.includes('Created Pilot study')")
+        self.assertFalse(b.js("document.getElementById('new-project-dialog').open"))
+        self.assertEqual(b.js("document.activeElement.id"), "project-pilot-study")
         self.assertEqual(env["registry"].records()["pilot-study"]["owner"], "bob@example.edu")
+        b.js("document.querySelector('.project-members summary').click()")
         add = """(email => { const form = document.querySelector('.project-members .add-member');
             form.querySelector('input').value = email; form.requestSubmit(); })"""
         self.expected.add((400, "/projects/api/members"))
@@ -526,6 +537,9 @@ class E2E(unittest.TestCase):
         b.js(f"{add}('carol@example.edu')")
         b.wait_for("document.querySelector('.project-members summary').textContent === 'Members (2)'")
         self.assertIn("carol@example.edu", env["registry"].records()["pilot-study"]["members"])
+        b.js("document.getElementById('project-pilot-study').click()")
+        b.wait_for("location.pathname === '/p/pilot-study/'")
+        b.wait_for("document.getElementById('upload-btn')?.innerText === 'Upload recording or transcript'")
 
 
     def test_recording_to_verified_transcript(self):
@@ -556,12 +570,10 @@ class E2E(unittest.TestCase):
             f.password.value = {json.dumps(env['passwords']['bob@example.edu'])};
             f.requestSubmit(); }})()""")
         b.wait_for("location.pathname === '/'")
-        self.assertIn("From a recording to a coded transcript", b.js("document.body.textContent"))
-
         # The practice interview explains that it has no audio, and how to get some.
-        b.go(f"{origin}/p/sandbox/?file=practice-interview.md")
+        b.js("document.getElementById('try-coding').click()")
         b.wait_for("document.querySelectorAll('#text-display .coded').length >= 5")
-        b.wait_for("document.querySelector('.recordings-hint')?.textContent.includes('Upload a recording')")
+        self.assertEqual(b.js("document.getElementById('upload-btn').innerText"), "Upload")
         b.js("[...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Verify against audio').click()")
         b.wait_for("document.body.textContent.includes('This transcript has no audio.')")
         self.assertNotIn("no audio filename set", b.js("document.body.textContent"))
@@ -574,7 +586,7 @@ class E2E(unittest.TestCase):
         doc = b.call("DOM.getDocument")["root"]["nodeId"]
         node = b.call("DOM.querySelector", nodeId=doc, selector="#upload-input")["nodeId"]
         b.call("DOM.setFileInputFiles", nodeId=node, files=[str(recording)])
-        b.wait_for("document.getElementById('upload-status').textContent.includes('Transcribe it under Recordings')")
+        b.wait_for("document.getElementById('upload-status').textContent.includes('Added site visit.m4a')")
         b.wait_for("document.querySelector('#recordings .recording-name')?.textContent === 'site visit.m4a'")
         b.js("[...document.querySelectorAll('#recordings button')].find(x => x.textContent === 'Transcribe').click()")
         b.wait_for("!!document.querySelector('#recordings select')")
@@ -584,7 +596,7 @@ class E2E(unittest.TestCase):
         b.wait_for("document.getElementById('upload-status').textContent.includes('site visit.md is ready')", timeout=15)
         self.assertEqual(json.loads((env["base"] / "seen.json").read_text())["speakers"], "3")
         b.wait_for("document.querySelectorAll('.file-item').length === 2")
-        b.js("[...document.querySelectorAll('#recordings button')].find(x => x.textContent === 'site visit.md').click()")
+        b.js("[...document.querySelectorAll('#recordings button')].find(x => x.textContent === 'Open transcript').click()")
         b.wait_for("document.getElementById('text-display').textContent.includes('tell me about the site')")
         b.js("[...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Verify against audio').click()")
         b.wait_for("!!document.querySelector('#vf-noaudio')")

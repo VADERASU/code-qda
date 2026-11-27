@@ -951,8 +951,7 @@ async function init() {
       await loadFiles().catch(() => {});
       const status = document.getElementById('upload-status');
       status.classList.remove('error');
-      status.textContent = `${jobs.map(job => job.transcript).join(', ')} ${jobs.length > 1 ? 'are' : 'is'} ready. `
-        + 'Open it and use Verify against audio to check it against the recording.';
+      status.textContent = `${jobs.map(job => job.transcript).join(', ')} ${jobs.length > 1 ? 'are' : 'is'} ready.`;
       status.hidden = false;
     }
   });
