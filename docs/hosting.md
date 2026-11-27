@@ -30,9 +30,11 @@ browser ──HTTPS──▶ Tailscale Funnel (TLS ends here, on this machine)
   `.annot.json`, `codes.json`) plus a directory of audio. Members get
   everything in the project. To anyone else, the project doesn't exist: they
   get the same 404 as for a made-up name.
-- **Edit history.** Every transcript correction records the editor's
-  **handle**, taken from their session. It is a short name like `rolando`, not
-  their email, so emails stay out of edit logs.
+- **Edit history.** Every transcript correction and every new coding records
+  the editor's **handle**, taken from their session, and the time. The handle
+  is a short name like `rolando`, not their email, so emails stay out of edit
+  logs and `.annot.json` files. The server writes these records, so a client
+  can't claim someone else's work.
 - **State directory.** Accounts and sessions live in a state directory outside
   the repository, so they can never be committed. Passwords are stored only as
   scrypt hashes, and tokens only as SHA-256 digests.

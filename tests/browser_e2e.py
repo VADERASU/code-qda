@@ -239,6 +239,50 @@ class E2E(unittest.TestCase):
         self.assertIn("simulator", b.js("document.querySelector('#text-display .coded').textContent"))
         self.assertTrue(b.js("location.search.includes('file=alpha.md')"))
 
+    def test_progress_and_resume(self):
+        """The file list shows how far coding has got, and opening a transcript
+        lands on its farthest-down coding, not the most recently saved one."""
+        b = self.browser
+        project = support.fixture_project(support.temp_dir(self), stems=("alpha", "beta", "gamma"))
+        md = project.md_dir
+        text = "\n\n".join(f"Paragraph {i}. " + "We log every robot run to disk. " * 10
+                           for i in range(80))
+        (md / "alpha.md").write_text(text, encoding="utf-8")
+        (md / "alpha.tx.json").unlink()   # a plain .md, so the text above is the transcript
+
+        def coding(ann_id, paragraph):
+            start = text.index(f"Paragraph {paragraph}.")
+            end = start + len(f"Paragraph {paragraph}.")
+            return {"id": ann_id, "codeId": "code-root1", "text": text[start:end],
+                    "start": start, "end": end}
+
+        # Saved last but near the top: the old "resume" target.
+        (md / "alpha.annot.json").write_text(json.dumps([coding("far", 60), coding("near", 5)]))
+        (md / "beta.annot.json").write_text("[]")
+        gamma = (md / "gamma.md").read_text(encoding="utf-8")
+        last = "Tell me more about that."
+        start = gamma.index(last)
+        (md / "gamma.annot.json").write_text(json.dumps([{
+            "id": "end", "codeId": "code-root1", "text": last,
+            "start": start, "end": start + len(last)}]))
+        server = support.local_server(self, project)
+        b.go(f"http://localhost:{server.port}/")
+        b.wait_for("document.querySelectorAll('.file-item').length === 3")
+        # alpha is coded through ~75%, beta not at all, gamma to its last line.
+        self.assertEqual(b.js("[...document.querySelectorAll('.file-item')].map(e => e.dataset.coding).join()"),
+                         "started,none,mostly")
+        self.assertIn("through 75%", b.js("document.querySelector('.file-item').title"))
+
+        b.js("document.querySelector('.file-item').click()")
+        b.wait_for("document.querySelectorAll('#text-display .coded').length === 2")
+        offset = b.js("""(() => {
+            const main = document.getElementById('main');
+            const far = document.querySelector('.coded[data-ids~="far"]');
+            return far.getBoundingClientRect().top - main.getBoundingClientRect().top;
+        })()""")
+        self.assertGreater(b.js("document.getElementById('main').scrollTop"), 0)
+        self.assertLess(abs(offset), 120, "the farthest coding sits at the top of the pane")
+
     def test_hosted_flow(self):
         b = self.browser
         env = support.hosted_setup(self)

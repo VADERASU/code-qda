@@ -169,7 +169,9 @@ body {
 
 /* file list */
 .file-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 5px 8px;
   border-radius: 4px;
   cursor: pointer;
@@ -177,10 +179,18 @@ body {
   font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 .file-item:hover { background: #f0f0f0; }
 .file-item.active { background: #e8f0fe; color: #1a73e8; font-weight: 500; }
+/* A long name gives way first (its huge flex-shrink); who/when shrinks only
+   once the name is down to a few characters, as in a narrow sidebar. */
+.file-name { flex: 1 1000 auto; min-width: 4em; overflow: hidden; text-overflow: ellipsis; }
+.file-meta { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: #888; font-size: 11px; font-weight: 400; }
+/* Coding progress: hollow = not coded, wedge = being coded, solid = mostly coded. */
+.file-progress { flex-shrink: 0; }
+.file-progress-none { color: #b0b0b0; }
+.file-progress-started { color: #d56e00; }
+.file-progress-mostly { color: #188038; }
 
 /* code tree */
 .code-group { margin-bottom: 2px; }
@@ -839,7 +849,7 @@ body:has(#main[data-reading-theme="dark"] #file-bar:not([hidden])) .annotation-s
 .reading-panel button { cursor: pointer; }
 #reading-settings :focus-visible, #verify-btn:focus-visible { outline: 2px solid var(--reading-outline); outline-offset: 2px; }
 #main[data-reading-theme="dark"] .reading-panel select { color-scheme: dark; }
-.file-audio-badge { float: right; color: #888; }
+.file-audio-badge { flex-shrink: 0; color: #888; }
 .file-audio-badge.file-audio-available { color: #174ea6; }
 
 #verify-view { max-width: 860px; margin: 0; }

@@ -30,7 +30,16 @@ and accepts requests from this computer only.
   audio verification text. **Reset reading preferences** restores the defaults.
 - **Resize Files** by dragging the divider above Codes. Files starts compact
   and scrolls independently, leaving most of the sidebar for Codes.
-- **Open a transcript** to resume at its most recently added coding annotation.
+- **See how far coding has got** in the Files list. A hollow circle means not
+  coded, a partly filled one means being coded, and a solid green one means
+  mostly coded. Mostly coded means the farthest coded passage is at least 80%
+  of the way down. Hover a file for the exact share, its number of codings,
+  and its last change. Beside each name are who made the last change and
+  when, either a coding or a transcript correction. Codings made before this
+  feature, and removals, aren't recorded. The list refreshes after each save
+  and when you return to the tab.
+- **Open a transcript** to resume at its farthest-down coded passage, which
+  is placed at the top of the pane so the uncoded text follows.
   The URL includes `?file=...` so refreshing or bookmarking reopens that transcript;
   browser Back and Forward follow transcript selections.
   Transcripts with no codes start at the beginning.
@@ -146,8 +155,8 @@ over HTTPS with Tailscale Funnel. [Hosting guide](docs/hosting.md)
   link, and they choose a password.
 - **Projects.** Each study is a separate project, and people see only the
   projects you add them to.
-- **Edit history.** Transcript corrections record the signed-in person's
-  handle.
+- **Edit history.** Transcript corrections and codings record the signed-in
+  person's handle and the time.
 - **Coding at the same time.** The server merges codebook edits by code.
   If your save conflicts with someone else's annotation changes to the same
   transcript, the app reloads it and asks you to redo your last change.

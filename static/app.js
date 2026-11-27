@@ -98,11 +98,13 @@ function restorePlace() {
 }
 
 function resumeCoding() {
-  // New annotations are appended and saved in insertion order. Use the last
-  // one still rendered, since stale or invalid ranges may have been skipped.
-  const annotation = state.annotations.findLast(entry => (
-    textDisplay.querySelector(`.coded[data-ids~="${CSS.escape(entry.id)}"]`)
-  ));
+  // Coding works down the transcript, so pick up at the coded passage that
+  // starts farthest down: everything below it is what is left to do. Only
+  // rendered ones count, since stale or invalid ranges may have been skipped.
+  const annotation = state.annotations
+    .slice()
+    .sort((a, b) => b.start - a.start || b.end - a.end)
+    .find(entry => textDisplay.querySelector(`.coded[data-ids~="${CSS.escape(entry.id)}"]`));
   if (annotation) {
     scrollToOffset(annotation.start);
     markOffsets(annotation.start, annotation.end);
@@ -299,6 +301,12 @@ async function showFileOverview() {
 }
 
 window.addEventListener('popstate', restoreFromUrl);
+
+// Others code the same project. Coming back to this tab is when their
+// progress is worth catching up on, the way a pull would.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') loadFiles().catch(() => {});
+});
 
 async function onOverviewInstanceClick(instance) {
   state.navigating = true;
@@ -845,6 +853,7 @@ async function saveCodes() {
     await request;
     if (state.currentFile === file) showSaveStatus('saved');
     loadOverview();
+    loadFiles().catch(() => {});   // this file's coding progress just moved
   } catch (error) {
     if (state.currentFile !== file) return;
     if (error instanceof SaveConflict) {

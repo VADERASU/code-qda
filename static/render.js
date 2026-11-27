@@ -867,7 +867,71 @@ export function bindUiEvents(handlers) {
   });
 }
 
+// Coded through at least this share of the transcript counts as mostly coded.
+// Interviews end in wrap-up talk nobody codes: the finished ones here stop
+// at 95-100%, so a file short of this is still being worked through.
+const MOSTLY_CODED = 0.8;
+
+const CODING_LABELS = {
+  none: 'Not coded',
+  started: 'Being coded',
+  mostly: 'Mostly coded'
+};
+
+function codingState(coding) {
+  if (!coding || !(coding.count > 0)) return 'none';
+  return coding.through >= MOSTLY_CODED ? 'mostly' : 'started';
+}
+
+// A pie that fills as coding moves down the transcript: hollow, a wedge, solid.
+// Shape alone tells the three states apart; color only reinforces them.
+function progressIcon(codingStatus, through) {
+  let fill = '';
+  if (codingStatus === 'mostly') {
+    fill = '<circle cx="8" cy="8" r="4.5" fill="currentColor"/>';
+  } else if (codingStatus === 'started') {
+    // Kept off both ends so a sliver of progress shows and partial never reads as full.
+    const angle = Math.min(Math.max(through, 0.08), 0.9) * 2 * Math.PI;
+    const x = (8 + 4.5 * Math.sin(angle)).toFixed(2);
+    const y = (8 - 4.5 * Math.cos(angle)).toFixed(2);
+    fill = `<path d="M8 8V3.5A4.5 4.5 0 ${angle > Math.PI ? 1 : 0} 1 ${x} ${y}Z" fill="currentColor"/>`;
+  }
+  return `<svg class="file-progress file-progress-${codingStatus}" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">`
+    + `<circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" stroke-width="1.4"/>${fill}</svg>`;
+}
+
+function timeAgo(ts) {
+  const elapsed = Date.now() - Date.parse(ts);
+  if (!Number.isFinite(elapsed)) return '';
+  const minutes = Math.floor(elapsed / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(ts).toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
+}
+
+function fileSummary(codingStatus, coding, change) {
+  const lines = [];
+  if (codingStatus === 'none') {
+    lines.push('Not coded yet');
+  } else {
+    const count = `${coding.count} coding${coding.count === 1 ? '' : 's'}`;
+    lines.push(`${CODING_LABELS[codingStatus]}: through ${Math.round(coding.through * 100)}% of the transcript (${count})`);
+  }
+  if (change) {
+    const what = change.kind === 'correction' ? 'Transcript correction' : 'Coding';
+    const when = new Date(change.ts).toLocaleString(undefined, {dateStyle: 'medium', timeStyle: 'short'});
+    lines.push(`Last change: ${what}${change.by ? ` by ${change.by}` : ''}, ${when}`);
+  }
+  return lines.join('\n');
+}
+
 export function renderFiles(files, onFileSelect) {
+  // The list is rebuilt after every save; keep the reader's place in it.
+  const scrollTop = dom.fileList.scrollTop;
   dom.fileList.innerHTML = '';
   if (files.length === 0) {
     dom.fileList.innerHTML = '<div style="color:#aaa;font-size:12px;padding:4px 8px">No .md files in md/</div>';
@@ -875,12 +939,31 @@ export function renderFiles(files, onFileSelect) {
   }
 
   files.forEach(file => {
-    // /api/files returns {name, tx, audioAvailable}; tolerate bare strings too.
+    // /api/files returns {name, tx, audioAvailable, coding, lastChange};
+    // tolerate bare strings too.
     const fileName = typeof file === 'string' ? file : file.name;
     const hasTranscript = typeof file === 'string' ? false : Boolean(file.tx);
+    const coding = typeof file === 'string' ? null : file.coding;
+    const change = typeof file === 'string' ? null : file.lastChange;
+    const codingStatus = codingState(coding);
     const element = document.createElement('div');
     element.className = 'file-item';
-    element.textContent = fileName;
+    element.dataset.coding = codingStatus;
+    element.title = fileSummary(codingStatus, coding, change);
+    element.innerHTML = progressIcon(codingStatus, coding?.through ?? 0);
+    const label = document.createElement('span');
+    label.className = 'file-name';
+    label.textContent = fileName;
+    const status = document.createElement('span');
+    status.className = 'visually-hidden';
+    status.textContent = `, ${CODING_LABELS[codingStatus].toLowerCase()}`;
+    element.append(label, status);
+    if (change) {
+      const meta = document.createElement('span');
+      meta.className = 'file-meta';
+      meta.textContent = [change.by, timeAgo(change.ts)].filter(Boolean).join(' · ');
+      element.appendChild(meta);
+    }
     element.classList.toggle('active', fileName === state.currentFile);
     if (hasTranscript) {
       const badge = document.createElement('span');
@@ -896,6 +979,7 @@ export function renderFiles(files, onFileSelect) {
     element.onclick = () => onFileSelect(fileName);
     dom.fileList.appendChild(element);
   });
+  dom.fileList.scrollTop = scrollTop;
 }
 
 export function renderText() {

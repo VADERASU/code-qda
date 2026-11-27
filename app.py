@@ -15,6 +15,7 @@ manages accounts and projects.
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import http.server
 import json
@@ -261,6 +262,94 @@ def clean_annotations(items):
             ann["stale"] = True
         out.append(ann)
     return out
+
+
+def now_stamp():
+    """The time now, as the transcript edit log writes it."""
+    return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def parse_stamp(value):
+    """An edit-log or coding timestamp as an aware datetime, or None.
+
+    Stamps carry the offset of whichever machine wrote them, and the data has
+    been coded from several time zones, so they are compared as times, never
+    as strings."""
+    if not isinstance(value, str):
+        return None
+    try:
+        when = datetime.datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return when if when.tzinfo else when.astimezone()
+
+
+def stamp_annotations(annotations, previous, author, now):
+    """Record who applied each coding, and when.
+
+    Only the server writes these: clients send whole annotation lists, so a
+    stamp taken from the request could claim someone else's work or rewrite
+    history. A coding keeps the stamp it was first saved with through moves,
+    resizes and transcript remaps. Codings saved before stamps existed stay
+    unstamped rather than being dated to whenever they are next saved.
+    """
+    before = {a["id"]: a for a in previous
+              if isinstance(a, dict) and isinstance(a.get("id"), str)}
+    for ann in annotations:
+        old = before.get(ann["id"])
+        if old is None:
+            ann["ts"] = now
+            if author:
+                ann["by"] = author
+            continue
+        for key in ("ts", "by"):
+            if isinstance(old.get(key), str) and old[key]:
+                ann[key] = old[key]
+
+
+def coding_progress(annotations, length, code_ids):
+    """How far coding has got in one transcript.
+
+    `through` is the share of the transcript above the end of the farthest
+    coding. Coders work top to bottom and leave irrelevant talk uncoded, so
+    coverage says little (finished interviews here are 13-42% covered) while
+    the farthest coding's position tracks progress closely.
+    """
+    count = reach = 0
+    for ann in annotations:
+        if not isinstance(ann, dict) or not isinstance(ann.get("codeId"), str):
+            continue
+        start, end = ann.get("start"), ann.get("end")
+        if (ann["codeId"] not in code_ids or not isinstance(start, int)
+                or not isinstance(end, int) or not 0 <= start < end <= length):
+            continue  # what the coding view would not draw either
+        count += 1
+        reach = max(reach, end)
+    return {"count": count, "through": round(reach / length, 3) if length else 0}
+
+
+def last_change(annotations, tx):
+    """The latest recorded change to a transcript, or None.
+
+    Records are coding stamps and the transcript's correction log. Removing a
+    coding leaves no record, and neither did codings saved before stamping,
+    so this can be older than the files' last write. File times are no
+    substitute: copying the data in resets every one of them.
+    """
+    best = None
+    records = [(a, "coding") for a in annotations]
+    edits = tx.get("edits") if isinstance(tx, dict) else None
+    records += [(e, "correction") for e in (edits if isinstance(edits, list) else [])]
+    for record, kind in records:
+        if not isinstance(record, dict):
+            continue
+        when = parse_stamp(record.get("ts"))
+        if when is None or (best is not None and when <= best[0]):
+            continue
+        by = record.get("by")
+        best = (when, {"ts": record["ts"], "by": by if isinstance(by, str) and by else None,
+                       "kind": kind})
+    return best[1] if best else None
 
 
 def write_json(path, data, indent=2):
@@ -648,21 +737,31 @@ class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
         return md_path.with_name(md_path.name[:-len(".md")] + ".annot.json")
 
     def _list_files(self, params):
+        code_ids = sanitize_code_tree(self._load_shared_tree()).keys()
         files = []
         for f in sorted(self.project.md_dir.glob("*.md")):
             if f.name.startswith("."):
                 continue
             tx_path = f.with_suffix(".tx.json")
+            tx = None
             available = False
             if tx_path.exists():
                 try:
-                    available = audio_available(self.project, txfmt.load(tx_path))
+                    tx = txfmt.load(tx_path)
+                    available = audio_available(self.project, tx)
                 except (OSError, ValueError, AttributeError):
                     pass  # Keep the file list usable if a transcript cannot be read.
+            try:
+                length = len(f.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                length = 0
+            annotations = self._read_annotations(self._annot_path(f))
             files.append({
                 "name": f.name,
                 "tx": tx_path.exists(),
                 "audioAvailable": available,
+                "coding": coding_progress(annotations, length, code_ids),
+                "lastChange": last_change(annotations, tx),
             })
         self._json(files)
 
@@ -747,6 +846,8 @@ class Handler(HostedMixin, http.server.BaseHTTPRequestHandler):
                                       keep_ids={a["codeId"] for a in annotations})
             if merged != shared:
                 write_json(self.project.codes_file, merged)
+        author = self.user.get("handle") if self.user is not None else None
+        stamp_annotations(annotations, self._read_annotations(af), author, now_stamp())
         text = json.dumps(annotations, indent=2, ensure_ascii=False)
         txfmt.write_text_atomic(af, text)
         self._json({"ok": True,
